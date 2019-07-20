@@ -20,6 +20,6 @@ cuda_10_1 = ["cuda/cuda_10_1"]
 
 [dependencies]
 proc-macro2 = "0.4.30"
-syn = "0.15.39"
+syn = { version = "0.15.39", features = ["full", "extra-traits"] }
 cuda = "0.4.0-pre.2"
 quote = "0.6.13"

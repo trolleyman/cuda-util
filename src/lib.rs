@@ -4,154 +4,118 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
+use syn::parse_macro_input;
+use quote::{quote, ToTokens};
+use quote::TokenStreamExt;
 
 
-fn error_on_attrs(attr: TokenStream) -> proc_macro::TokenStream {
-    let mut it = attr.into_iter();
-    let mut span = it.next().map(|tt| tt.span()).unwrap_or(Span::def_site());
-    span = it.fold(span, |s| s.join(s).unwrap_or(s));
-    syn::Error::new(span, "no options taken").to_compile_error().into()
+#[derive(Copy, Clone)]
+enum FunctionType {
+    Host,
+    Device,
+    Global,
+}
+
+fn process_host_fn(f: syn::ItemFn) -> TokenStream {
+    // TODO
+    for a in f.attrs.iter() {
+        println!("{}", a.clone().into_token_stream());
+    }
+    dbg!(&f.ident);
+    println!();
+    quote!{ #f }
+}
+
+fn process_device_fn(f: syn::ItemFn) -> TokenStream {
+    // TODO
+    for a in f.attrs.iter() {
+        println!("{}", a.clone().into_token_stream());
+    }
+    dbg!(&f.ident);
+    println!();
+    quote!{ #f }
+}
+
+fn process_global_fn(f: syn::ItemFn) -> TokenStream {
+    // TODO
+    for a in f.attrs.iter() {
+        println!("{}", a.clone().into_token_stream());
+    }
+    dbg!(&f.ident);
+    println!();
+    quote!{ #f }
+}
+
+fn process_fn(f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
+    match fn_type {
+        FunctionType::Host => process_host_fn(f),
+        FunctionType::Device => process_device_fn(f),
+        FunctionType::Global => process_global_fn(f),
+    }
+}
+
+fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> TokenStream {
+    match item {
+        syn::Item::Fn(f) => process_fn(f, fn_type),
+        syn::Item::Mod(m) => {
+            if let Some((_, items)) = m.content {
+                let mut tt = TokenStream::new();
+                for item in items {
+                    tt.append_all(process_all_fns(item, fn_type, false))
+                }
+                tt
+            } else {
+                // TODO: Process other module somehow
+                if direct {
+                    syn::Error::new_spanned(m, "expected function or inline module")
+                        .to_compile_error()
+                } else {
+                    m.into_token_stream()
+                }
+            }
+        },
+        _ => {
+            if direct {
+                syn::Error::new_spanned(item, "expected function or inline module")
+                    .to_compile_error()
+            } else {
+                quote!{ #item }
+            }
+        }
+    }
 }
 
 
 #[proc_macro_attribute]
 pub fn host(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let attr = TokenStream::from(attr);
-    let item = TokenStream::from(item);
     if !attr.is_empty() {
-        error_on_attrs(attr);
+        return syn::Error::new_spanned(attr, "expected no attribute options")
+            .to_compile_error().into();
     }
-
-    let output: TokenStream = TokenStream::new();
-
-    proc_macro::TokenStream::from(output)
+    let item = parse_macro_input!(item as syn::Item);
+    process_all_fns(item, FunctionType::Host, true).into()
 }
 
 #[proc_macro_attribute]
 pub fn device(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let attr = TokenStream::from(attr);
-    let item = TokenStream::from(item);
     if !attr.is_empty() {
-        error_on_attrs(attr);
+        return syn::Error::new_spanned(attr, "expected no attribute options")
+            .to_compile_error().into();
     }
-
-    let output: TokenStream = TokenStream::new();
-
-    proc_macro::TokenStream::from(output)
+    let item = parse_macro_input!(item as syn::Item);
+    process_all_fns(item, FunctionType::Device, true).into()
 }
 
 #[proc_macro_attribute]
 pub fn global(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let attr = TokenStream::from(attr);
-    let item = TokenStream::from(item);
     if !attr.is_empty() {
-        error_on_attrs(attr);
+        return syn::Error::new_spanned(attr, "expected no attribute options")
+            .to_compile_error().into();
     }
-
-    let output: TokenStream = TokenStream::new();
-
-    proc_macro::TokenStream::from(output)
-}
-
-
-#[cfg(test)]
-mod tests {
-    use cuda::runtime::*;
-
-    /// callable from CPU, run on CPU
-    #[host]
-    unsafe fn host(ptr: *mut i32) {
-        *ptr = 1;
-    }
-    
-    /// callable from GPU, run on GPU
-    #[device]
-    unsafe fn device(ptr: *mut i32) {
-        *ptr = 1;
-    }
-    
-    /// callable from CPU & GPU, run on GPU
-    #[global]
-    unsafe fn global(ptr: *mut i32) {
-        *ptr = 1;
-    }
-    
-    /// callable from CPU & GPU, run on device which it is called from
-    #[host]
-    #[device]
-    unsafe fn host_device(ptr: *mut i32) {
-        *ptr = 1;
-    }
-    
-    #[global]
-    unsafe fn call_device(ptr: *mut i32) {
-        device(ptr);
-    }
-    
-    #[global]
-    unsafe fn call_host_device(ptr: *mut i32) {
-        host_device(ptr);
-    }
-    
-    fn setup_cuda_test() -> CudaResult<*mut i32> {
-        let ptr = cuda_alloc_device(std::mem::size_of::<i32>())?;
-        cuda_memset(ptr, 0, std::mem::size_of::<i32>())?;
-        return Ok(ptr as _);
-    }
-    
-    unsafe fn teardown_cuda_test(ptr: *mut i32) -> CudaResult<i32> {
-        let mut i = 0;
-        cuda_memcpy(&mut i as _, ptr, 1, CudaMemcpyKind::DeviceToHost)?;
-        CudaDevice::synchronize_current()?;
-        return Ok(i);
-    }
-    
-    #[test]
-    fn test_host() {
-        let mut i = 0;
-        unsafe {
-            host(&mut i as *mut i32);
-        }
-        assert_eq!(i, 1);
-    }
-    
-    #[test]
-    fn test_device() -> CudaResult {
-        let mut ptr = setup_cuda_test()?;
-        unsafe {
-            call_device(ptr);
-            assert_eq!(teardown_cuda_test(ptr)?, 1);
-        }
-        Ok(())
-    }
-    
-    #[test]
-    fn test_global() -> CudaResult {
-        let mut ptr = setup_cuda_test()?;
-        unsafe {
-            global(ptr);
-            assert_eq!(teardown_cuda_test(ptr)?, 1);
-        }
-        Ok(())
-    }
-    
-    #[test]
-    fn test_host_device_cpu() {
-        let mut i = 0;
-        unsafe {
-            host_device(&mut i as *mut i32);
-        }
-        assert_eq!(i, 1);
-    }
-    
-    #[test]
-    fn test_host_device_gpu() -> CudaResult {
-        let mut ptr = setup_cuda_test()?;
-        unsafe {
-            call_host_device(ptr);
-            assert_eq!(teardown_cuda_test(ptr)?, 1);
-        }
-        Ok(())
-    }
+    let item = parse_macro_input!(item as syn::Item);
+    process_all_fns(item, FunctionType::Global, true).into()
 }
