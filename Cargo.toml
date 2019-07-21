@@ -14,6 +14,10 @@ cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros-impl/cuda_9_1" , "cuda-macros-util/c
 cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros-impl/cuda_9_2" , "cuda-macros-util/cuda_9_2" ]
 cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-impl/cuda_10_0", "cuda-macros-util/cuda_10_0"]
 cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-impl/cuda_10_1", "cuda-macros-util/cuda_10_1"]
+# Used to enable `cuda_macros::build`
+build = []
+# Internal use only. Used to output bindings & source code.
+_output = []
 
 [dependencies]
 cuda = "0.4.0-pre.2"

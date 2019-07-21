@@ -1,7 +1,17 @@
 
+extern crate cuda;
+extern crate cuda_macros_util;
+extern crate cuda_macros_impl;
+
+#[cfg(feature="build")]
+mod build;
+#[cfg(feature="build")]
+pub use build::build;
+
 pub use cuda_macros_impl::{host, device, global};
 
-use ::cuda::ffi::driver_types::cudaStream_t;
+use cuda::ffi::driver_types::cudaStream_t;
+
 
 #[repr(C)]
 pub struct ExecutionConfig {
