@@ -1,5 +1,19 @@
 
 extern crate proc_macro;
+extern crate cuda_macros_util;
+extern crate cuda;
+extern crate proc_macro2;
+extern crate syn;
+extern crate quote;
+
+#[cfg(feature="_output")]
+extern crate chrono;
+
+#[cfg(feature="_output")]
+mod output;
+
+
+use std::borrow::Cow;
 
 use proc_macro2::TokenStream;
 use syn::parse_macro_input;
@@ -9,8 +23,32 @@ use quote::TokenStreamExt;
 use cuda_macros_util::{type_path_matches, FunctionType};
 
 
-const RUST_NUM_TYPES: &'static [&'static str] = &["f32", "f64", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"];
-const RUST_C_NUM_TYPES: &'static [&'static str] = &["c_char", "c_double", "c_float", "c_int", "c_long", "c_longlong", "c_schar", "c_short", "c_uchar", "c_uint", "c_ulong", "c_ulonglong", "c_ushort"];
+const RUST_FIXED_NUM_TYPES: &'static [&'static str] = &["f32", "f64", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"];
+const C_FIXED_NUM_TYPES   : &'static [&'static str] = &["float", "double", "uint8_t", "int8_t", "uint16_t", "int16_t", "uint32_t", "int32_t", "uint64_t", "int64_t"];
+const RUST_VAR_NUM_TYPES  : &'static [&'static str] = &["c_char", "c_double", "c_float", "c_int", "c_long", "c_longlong", "c_schar", "c_short", "c_uchar", "c_uint", "c_ulong", "c_ulonglong", "c_ushort"];
+const C_VAR_NUM_TYPES     : &'static [&'static str] = &["char", "double", "float", "int", "long", "long long", "signed char", "short", "unsigned char", "unsigned int", "unsigned long", "unsigned long long", "unsigned short"];
+
+
+fn convert_type_path(path: &syn::Path) -> Option<Cow<'static, str>> {
+	for (&rty, &cty) in RUST_FIXED_NUM_TYPES.iter().zip(C_FIXED_NUM_TYPES.iter()) {
+		if path.is_ident(rty) {
+			return Some(cty.into());
+		}
+	}
+	for (&rty, &cty) in RUST_VAR_NUM_TYPES.iter().zip(C_VAR_NUM_TYPES.iter()) {
+		if path.is_ident(rty) {
+			return Some(cty.into());
+		}
+	}
+
+	// Check for ::std::os::raw::<c_num> types
+	for (rty, &cty) in RUST_VAR_NUM_TYPES.iter().map(|ty| format!("::std::os::raw::{}", ty)).zip(C_VAR_NUM_TYPES.iter()) {
+		if type_path_matches(path, &rty) {
+			return Some(rty);
+		}
+	}
+	None
+}
 
 fn is_type_path_disallowed(type_path: &syn::TypePath) -> (bool, Option<TokenStream>) {
 	if type_path.qself.is_some() {
@@ -59,29 +97,33 @@ fn check_function_signature(f: &syn::ItemFn) -> Option<TokenStream> {
 
 	if f.attrs.len() != 0 {
 		return Some(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed")
-			.to_compile_error().into())
+			.to_compile_error().into());
 	}
 	if let Some(item) = &f.constness {
 		return Some(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed")
-			.to_compile_error().into())
+			.to_compile_error().into());
 	}
 	if let Some(item) = &f.asyncness {
 		return Some(syn::Error::new_spanned(item.clone(), "async CUDA functions are not allowed")
-			.to_compile_error().into())
+			.to_compile_error().into());
+	}
+	if let Some(item) = &f.abi {
+		return Some(syn::Error::new_spanned(item.clone(), "non-default ABIs on CUDA functions are not allowed")
+			.to_compile_error().into());
 	}
 	if let Some(item) = &f.decl.variadic {
 		return Some(syn::Error::new_spanned(item.clone(), "varadic CUDA functions are not allowed")
-			.to_compile_error().into())
+			.to_compile_error().into());
 	}
 	if f.decl.generics.params.len() != 0 {
 		return Some(syn::Error::new_spanned(f.decl.generics.params.clone(), "generic CUDA functions are not allowed")
-			.to_compile_error().into())
+			.to_compile_error().into());
 	}
 	if let Some(item) = &f.decl.generics.where_clause {
 		return Some(syn::Error::new_spanned(item.clone(), "generic CUDA functions are not allowed")
-			.to_compile_error().into())
+			.to_compile_error().into());
 	}
-	
+
 	// Check argument spec
 	for arg in f.decl.inputs.iter() {
 		match arg {
@@ -119,18 +161,32 @@ fn check_function_signature(f: &syn::ItemFn) -> Option<TokenStream> {
 
 fn process_host_fn(f: syn::ItemFn) -> TokenStream {
 	// Pass through
-	// TODO: handle cfg(__CUDA_ARCH__)
+	// TODO: handle cfg!(__CUDA_ARCH__)
 	// https://stackoverflow.com/questions/23899190/can-a-host-device-function-know-where-it-is-executing
 	// https://docs.nvidia.com/cuda/archive/9.0/cuda-c-programming-guide/index.html#host
 	quote!{ #f }
 }
 
-fn process_device_fn(_f: syn::ItemFn) -> TokenStream {
-	// Output nothing - already compiled device version in build.rs
-	TokenStream::new()
+fn process_device_fn(f: syn::ItemFn) -> TokenStream {
+	let ident = f.ident.clone();
+	let vis = f.vis.clone();
+
+	// Output function
+	#[cfg(feature="_output")]
+	output::output_fn(f, FunctionType::Device);
+
+	// Return dummy identifier that will cause a compilation error when called
+	// TODO: give a better compile time error somehow (maybe custom type?)
+	quote!{
+		#vis const #ident: () = ();
+	}
 }
 
 fn process_global_fn(f: syn::ItemFn) -> TokenStream {
+	// Output function
+	#[cfg(feature="_output")]
+	output::output_fn(f.clone(), FunctionType::Global);
+
 	// Create function wrapper & link to CUDA function
 	use syn::{FnArg, Pat};
 

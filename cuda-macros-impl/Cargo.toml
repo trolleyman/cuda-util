@@ -17,6 +17,7 @@ cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros-util/cuda_9_1" ]
 cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros-util/cuda_9_2" ]
 cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-util/cuda_10_0"]
 cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-util/cuda_10_1"]
+_output = ["chrono"]
 
 [dependencies]
 cuda-macros-util = { path = "../cuda-macros-util" }
@@ -24,3 +25,5 @@ cuda = "0.4.0-pre.2"
 proc-macro2 = "0.4.30"
 syn = { version = "0.15.39", features = ["full", "extra-traits"] }
 quote = "0.6.13"
+
+chrono = { version = "0.4.7", optional = true }

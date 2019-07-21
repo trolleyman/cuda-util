@@ -1,11 +1,22 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::fs;
 
 pub fn build() {
 	let dir = PathBuf::from(std::env::var_os("OUT_DIR")
 		.expect("expected to be called in a build.rs script")).join("cuda_macros");
 	println!("cargo:rustc-env=CUDA_MACROS_OUT_DIR={}", dir.display());
+
+	// Ensure output directory is empty & exists
+	if dir.is_file() {
+		fs::remove_file(&dir).unwrap();
+	}
+	if dir.is_dir() {
+		// Remove old dir
+		fs::remove_dir_all(&dir).unwrap();
+	}
+	fs::create_dir_all(&dir).unwrap();
 
 	// Compile crate & output sources
 	let mut command = Command::new(env!("CARGO"));
@@ -33,4 +44,7 @@ pub fn build() {
 	if status.success() {
 		panic!("failed to execute cargo check");
 	}
+
+	// Compile sources that were output at the previous step
+	// TODO
 }
