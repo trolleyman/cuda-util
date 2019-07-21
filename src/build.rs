@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::fs;
 
+
 pub fn build() {
 	let dir = PathBuf::from(std::env::var_os("OUT_DIR")
 		.expect("expected to be called in a build.rs script")).join("cuda_macros");
@@ -46,5 +47,8 @@ pub fn build() {
 	}
 
 	// Compile sources that were output at the previous step
+	let libname = format!("rust_cuda_macros_{}_{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 	// TODO
+	cc::Build::new().cuda(true);
+	unimplemented!()
 }

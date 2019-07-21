@@ -4,6 +4,9 @@ extern crate cuda_macros_util;
 extern crate cuda_macros_impl;
 
 #[cfg(feature="build")]
+extern crate cc;
+
+#[cfg(feature="build")]
 mod build;
 #[cfg(feature="build")]
 pub use build::build;
