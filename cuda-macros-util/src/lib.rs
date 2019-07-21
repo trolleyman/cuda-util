@@ -5,6 +5,43 @@ pub fn ident_eq(ident: &syn::Ident, value: &str) -> bool {
 	ident.to_string() == value
 }
 
+/// Checks a type path and a string that represents a type path, to see if they match
+pub fn type_path_matches(type_path: &syn::TypePath, ty: &str) -> bool {
+	if ty.starts_with("::") {
+		ty = &["::".len()..];
+	}
+	let segment_count = ty.split("::").count();
+	if type_path.path.leading_colon.is_some() {
+		// Have to match fully
+		if segment_count != type_path.path.segments.len() {
+			return false;
+		}
+		for (i, segment) in ty.split("::").enumerate() {
+			if i >= type_path.path.segments.len() {
+				break;
+			}
+			if !ident_eq(type_path.path.segments[i].ident, segment)
+					|| type_path.path.segments[i].argments.len() != 0 {
+				return false;
+			}
+		}
+		true
+	} else {
+		// Can match in any place
+		for (i, segment) in ty.split("::").reverse().enumerate() {
+			let j: isize = type_path.path.segments.len() as isize - i as isize - 1;
+			if j <= 0 {
+				break;
+			}
+			if !ident_eq(type_path.path.segments[i].ident, segment)
+					|| type_path.path.segments[i].argments.len() != 0 {
+				return false;
+			}
+		}
+		true
+	}
+}
+
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum FunctionType {

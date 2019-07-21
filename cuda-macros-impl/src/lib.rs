@@ -3,36 +3,108 @@ extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use syn::parse_macro_input;
-use quote::{quote, ToTokens};
+use quote::{quote, quote_spanned, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_util::FunctionType;
+use cuda_macros_util::{type_path_matches, FunctionType};
 
+
+const RUST_NUM_TYPES: &'static [&'static str] = &["f32", "f64", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"];
+const RUST_C_NUM_TYPES: &'static [&'static str] = &["c_char", "c_double", "c_float", "c_int", "c_long", "c_longlong", "c_schar", "c_short", "c_uchar", "c_uint", "c_ulong", "c_ulonglong", "c_ushort"];
+
+fn is_type_path_disallowed(type_path: &syn::TypePath) -> (bool, Option<TokenStream>) {
+	if let Some(q) = &type_path.qself {
+		return (true, Some(syn::Error::new_spanned(q.clone(), "arguments with complicated types are not allowed in CUDA function declarations")
+			.to_compile_error().into()))
+	}
+	for ty in RUST_NUM_TYPES.iter() {
+		if type_path.is_ident(*ty) {
+			return (false, None);
+		}
+	}
+	for ty in RUST_C_NUM_TYPES.iter() {
+		if type_path.is_ident(*ty) {
+			return (false, None);
+		}
+	}
+
+	// Check for ::std::os::raw::<c_num> types
+	for ty in RUST_C_NUM_TYPES.iter().map(|ty| format!("::std::os::raw::{}", ty)) {
+		if type_path_matches(&type_path, &ty) {
+			return (false, None);
+		}
+	}
+	(true, None)
+}
+
+fn is_type_disallowed(ty: &syn::Type) -> (bool, Option<TokenStream>) {
+	match &ty {
+		Type::Slice(_) | Type::Array(_) => (true, None), // TODO: Auto-upload slices & arrays to CUDA
+		Type::Ptr(_) => (false, None),
+		Type::Reference(_) => (true, None), // TODO: Auto-uploading (?)
+		Type::BareFn(_) | Type::Never(_) | Type::TraitObject(_) | Type::ImplTrait(_) | Type::Paren | Type::Infer(_) | Type::Macro(_) | Type::Verbatim(_) => (true, None),
+		Type::Tuple(_) => (true, None), // TODO: Auto-unpack & repack
+		Type::Path(path) => is_type_path_disallowed(&path),
+		Type::Pren(inner) => is_type_disallowed(&inner),
+		Type::Group(inner) => is_type_disallowed(&inner.elem),
+		Type::Infer(inner) => return (true, Some(syn::Error::new_spanned(inner.clone(), "arguments with inferred types are not allowed in CUDA function declarations")
+			.to_compile_error().into()));
+	}
+}
 
 fn check_function_signature(f: &syn::ItemFn) -> Option<TokenStream> {
+	use syn::{FnArg, Pat, Type};
+
 	if f.attrs.len() != 0 {
-		return Some(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not supported")
+		return Some(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed")
 			.to_compile_error().into())
 	}
 	if let Some(item) = &f.constness {
-		return Some(syn::Error::new_spanned(item.clone(), "const functions are not supported")
+		return Some(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed")
 			.to_compile_error().into())
 	}
 	if let Some(item) = &f.asyncness {
-		return Some(syn::Error::new_spanned(item.clone(), "async functions are not supported")
+		return Some(syn::Error::new_spanned(item.clone(), "async CUDA functions are not allowed")
 			.to_compile_error().into())
 	}
 	if let Some(item) = &f.decl.variadic {
-		return Some(syn::Error::new_spanned(item.clone(), "varadic functions are not supported")
+		return Some(syn::Error::new_spanned(item.clone(), "varadic CUDA functions are not allowed")
 			.to_compile_error().into())
 	}
 	if f.decl.generics.params.len() != 0 {
-		return Some(syn::Error::new_spanned(f.decl.generics.params.clone(), "generic functions are not supported")
+		return Some(syn::Error::new_spanned(f.decl.generics.params.clone(), "generic CUDA functions are not allowed")
 			.to_compile_error().into())
 	}
 	if let Some(item) = &f.decl.generics.where_clause {
-		return Some(syn::Error::new_spanned(item.clone(), "generic functions are not supported")
+		return Some(syn::Error::new_spanned(item.clone(), "generic CUDA functions are not allowed")
 			.to_compile_error().into())
+	}
+	
+	// Check argument spec
+	for arg in f.decl.inputs.iter() {
+		match arg {
+			FnArg::SelfRef(arg) | FnArg::SelfValue(arg) => return Some(syn::Error::new_spanned(arg.clone(), format!("`{}` is not allowed in CUDA function declarations", &arg))
+				.to_compile_error().into()),
+			FnArg::Inferred(arg) => return Some(syn::Error::new_spanned(arg.clone(), "arguments with inferred types are not allowed in CUDA function declarations")
+				.to_compile_error().into()),
+			FnArg::Ignored(_) => {},
+			FnArg::Captured(arg) => {
+				let disallowed = match &arg.pat {
+					Pat::Wild(_) => false,
+					Pat::Ident(pat) => pat.by_ref.is_some() || pat.mutability.is_some() || pat.subpat.is_some(),
+					_ => true,
+				};
+				if disallowed {
+					return Some(syn::Error::new_spanned(arg.pat.clone(), "only simple bound arguments are allowed in CUDA function declarations")
+						.to_compile_error().into());
+				}
+				let disallowed_ty = is_type_disallowed(&arg.ty);
+				if let Some(ty) = disallowed_ty {
+					return Some(syn::Error::new_spanned(arg.ty.clone(), format!("arguments of type `{}` are not allowed in CUDA function declarations", &arg.ty))
+						.to_compile_error().into());
+				}
+			}
+		}
 	}
 	None
 }
@@ -57,19 +129,29 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 			.to_compile_error().into()
 	}
 
-	let ident = f.ident.clone();
-	let c_ident = quote!{ _rust_cuda_macros_cwrapper_#ident };
-	let vis = f.vis;
-	let args = unimplemented!();
-	let c_args_decl = unimplemented();
 	let args_decl = f.decl.inputs;
-	let ret = f.decl.output;
-	quote!{
-		extern "C" fn #c_ident(#c_args_decl);
+	for arg in args_decl.iter() {
+		match arg {
+			SelfRef(item) => return syn::Error::new_spanned(f, "self not allowed in ")
+				.to_compile_error().into(),
+		}
+	}
+	let args = unimplemented!();
+	let args_c_decl = unimplemented();
 
-		unsafe #vis fn #ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) -> #ret {
+	let fn_ident = f.ident.clone();
+	let fn_ident_c = quote!{ _rust_cuda_macros_cwrapper_#fn_ident };
+
+	let vis = f.vis;
+	let ret = f.decl.output;
+
+	quote!{
+		extern "C" fn #fn_ident_c(#args_c_decl) -> #ret_c;
+
+		unsafe #vis fn #fn_ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) -> #ret {
 			let config = config.into();
-			#c_ident(, #args)
+			let ret = #fn_ident_c(, #args);
+			Into::<#ret>::into(ret)
 		}
 	}
 }
