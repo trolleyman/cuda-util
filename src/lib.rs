@@ -3,6 +3,7 @@ pub use cuda_macros_impl::{host, device, global};
 
 use ::cuda::ffi::driver_types::cudaStream_t;
 
+#[repr(C)]
 pub struct ExecutionConfig {
 	pub grid_size: [usize; 3],
 	pub block_size: [usize; 3],
