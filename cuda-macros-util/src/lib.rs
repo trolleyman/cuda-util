@@ -3,7 +3,21 @@ extern crate cuda;
 extern crate proc_macro2;
 extern crate syn;
 extern crate quote;
+extern crate chrono;
 
+use proc_macro2::TokenStream;
+use quote::ToTokens;
+
+pub mod conv;
+pub mod write;
+
+
+pub fn tokens_join2(t1: impl ToTokens, t2: impl ToTokens) -> TokenStream {
+	let mut t = TokenStream::new();
+	t1.to_tokens(&mut t);
+	t2.to_tokens(&mut t);
+	t
+}
 
 /// Checks if an identifier has the value given
 pub fn ident_eq(ident: &syn::Ident, value: &str) -> bool {
@@ -64,14 +78,32 @@ impl FunctionType {
 	pub fn try_from_path(path: &syn::Path) -> Option<Self> {
 		use crate::FunctionType::*;
 
-		for (name, &ty) in ["host", "device", "global"].iter().zip([Host, Device, Global].iter()) {
-			if crate::type_path_matches(&path, &format!("::cuda_macros_impl::{}", name)) {
+		for &ty in [Host, Device, Global].iter() {
+			if crate::type_path_matches(&path, &format!("::cuda_macros_impl::{}", ty.attr())) {
 				return Some(ty);
-			} else if crate::type_path_matches(&path, &format!("::cuda_macros::{}", name)) {
+			} else if crate::type_path_matches(&path, &format!("::cuda_macros::{}", ty.attr())) {
+				return Some(ty);
+			} else if crate::type_path_matches(&path, &format!("::cuda::{}", ty.attr())) {
 				return Some(ty);
 			}
 		}
 		None
+	}
+
+	pub fn attr(self: &Self) -> &'static str {
+		match self {
+			FunctionType::Host => "host",
+			FunctionType::Device => "device",
+			FunctionType::Global => "global",
+		}
+	}
+
+	pub fn cattr(self: &Self) -> &'static str {
+		match self {
+			FunctionType::Host => "__host__",
+			FunctionType::Device => "__device__",
+			FunctionType::Global => "__global__",
+		}
 	}
 }
 

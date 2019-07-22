@@ -7,156 +7,46 @@ extern crate syn;
 extern crate quote;
 
 #[cfg(feature="_output")]
-extern crate chrono;
+extern crate fs2;
 
 #[cfg(feature="_output")]
 mod output;
 
-
-use std::borrow::Cow;
 
 use proc_macro2::TokenStream;
 use syn::parse_macro_input;
 use quote::{quote, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_util::{type_path_matches, FunctionType};
+use cuda_macros_util as util;
+use cuda_macros_util::FunctionType;
 
 
-const RUST_FIXED_NUM_TYPES: &'static [&'static str] = &["f32", "f64", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"];
-const C_FIXED_NUM_TYPES   : &'static [&'static str] = &["float", "double", "uint8_t", "int8_t", "uint16_t", "int16_t", "uint32_t", "int32_t", "uint64_t", "int64_t"];
-const RUST_VAR_NUM_TYPES  : &'static [&'static str] = &["c_char", "c_double", "c_float", "c_int", "c_long", "c_longlong", "c_schar", "c_short", "c_uchar", "c_uint", "c_ulong", "c_ulonglong", "c_ushort"];
-const C_VAR_NUM_TYPES     : &'static [&'static str] = &["char", "double", "float", "int", "long", "long long", "signed char", "short", "unsigned char", "unsigned int", "unsigned long", "unsigned long long", "unsigned short"];
-
-
-fn convert_type_path(path: &syn::Path) -> Option<Cow<'static, str>> {
-	for (&rty, &cty) in RUST_FIXED_NUM_TYPES.iter().zip(C_FIXED_NUM_TYPES.iter()) {
-		if path.is_ident(rty) {
-			return Some(cty.into());
-		}
-	}
-	for (&rty, &cty) in RUST_VAR_NUM_TYPES.iter().zip(C_VAR_NUM_TYPES.iter()) {
-		if path.is_ident(rty) {
-			return Some(cty.into());
-		}
-	}
-
-	// Check for ::std::os::raw::<c_num> types
-	for (rty, &cty) in RUST_VAR_NUM_TYPES.iter().map(|ty| format!("::std::os::raw::{}", ty)).zip(C_VAR_NUM_TYPES.iter()) {
-		if type_path_matches(path, &rty) {
-			return Some(rty);
-		}
-	}
-	None
-}
-
-fn is_type_path_disallowed(type_path: &syn::TypePath) -> (bool, Option<TokenStream>) {
-	if type_path.qself.is_some() {
-		return (true, Some(syn::Error::new_spanned(type_path.clone(), "arguments with complicated types are not allowed in CUDA function declarations")
-			.to_compile_error().into()))
-	}
-	for ty in RUST_NUM_TYPES.iter() {
-		if type_path.path.is_ident(*ty) {
-			return (false, None);
-		}
-	}
-	for ty in RUST_C_NUM_TYPES.iter() {
-		if type_path.path.is_ident(*ty) {
-			return (false, None);
-		}
-	}
-
-	// Check for ::std::os::raw::<c_num> types
-	for ty in RUST_C_NUM_TYPES.iter().map(|ty| format!("::std::os::raw::{}", ty)) {
-		if type_path_matches(&type_path, &ty) {
-			return (false, None);
-		}
-	}
-	(true, None)
-}
-
-fn is_type_disallowed(ty: &syn::Type) -> (bool, Option<TokenStream>) {
-	use syn::Type;
-
-	match &ty {
-		Type::Slice(_) | Type::Array(_) => (true, None), // TODO: Auto-upload slices & arrays to CUDA
-		Type::Ptr(_) => (false, None),
-		Type::Reference(_) => (true, None), // TODO: Auto-uploading (?)
-		Type::BareFn(_) | Type::Never(_) | Type::TraitObject(_) | Type::ImplTrait(_) | Type::Macro(_) | Type::Verbatim(_) => (true, None),
-		Type::Tuple(_) => (true, None), // TODO: Auto-unpack & repack
-		Type::Path(path) => is_type_path_disallowed(&path),
-		Type::Paren(inner) => is_type_disallowed(&inner.elem),
-		Type::Group(inner) => is_type_disallowed(&inner.elem),
-		Type::Infer(inner) => return (true, Some(syn::Error::new_spanned(inner.clone(), "arguments with inferred types are not allowed in CUDA function declarations")
-			.to_compile_error().into()))
-	}
-}
-
-fn check_function_signature(f: &syn::ItemFn) -> Option<TokenStream> {
+fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
 	use syn::{FnArg, Pat};
 
 	if f.attrs.len() != 0 {
-		return Some(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed"));
 	}
 	if let Some(item) = &f.constness {
-		return Some(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed"));
 	}
 	if let Some(item) = &f.asyncness {
-		return Some(syn::Error::new_spanned(item.clone(), "async CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(item.clone(), "async CUDA functions are not allowed"));
 	}
 	if let Some(item) = &f.abi {
-		return Some(syn::Error::new_spanned(item.clone(), "non-default ABIs on CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(item.clone(), "non-default ABIs on CUDA functions are not allowed"));
 	}
 	if let Some(item) = &f.decl.variadic {
-		return Some(syn::Error::new_spanned(item.clone(), "varadic CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(item.clone(), "varadic CUDA functions are not allowed"));
 	}
 	if f.decl.generics.params.len() != 0 {
-		return Some(syn::Error::new_spanned(f.decl.generics.params.clone(), "generic CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(f.decl.generics.params.clone(), "generic CUDA functions are not allowed"));
 	}
 	if let Some(item) = &f.decl.generics.where_clause {
-		return Some(syn::Error::new_spanned(item.clone(), "generic CUDA functions are not allowed")
-			.to_compile_error().into());
+		return Err(syn::Error::new_spanned(item.clone(), "generic CUDA functions are not allowed"));
 	}
-
-	// Check argument spec
-	for arg in f.decl.inputs.iter() {
-		match arg {
-			FnArg::SelfRef(arg) => return Some(syn::Error::new_spanned(arg.clone(), "`self` is not allowed in CUDA function declarations")
-				.to_compile_error().into()),
-			FnArg::SelfValue(arg) => return Some(syn::Error::new_spanned(arg.clone(), "`self` is not allowed in CUDA function declarations")
-				.to_compile_error().into()),
-			FnArg::Inferred(arg) => return Some(syn::Error::new_spanned(arg.clone(), "arguments with inferred types are not allowed in CUDA function declarations")
-				.to_compile_error().into()),
-			FnArg::Ignored(_) => {},
-			FnArg::Captured(arg) => {
-				let disallowed = match &arg.pat {
-					Pat::Wild(_) => false,
-					Pat::Ident(pat) => pat.by_ref.is_some() || pat.mutability.is_some() || pat.subpat.is_some(),
-					_ => true,
-				};
-				if disallowed {
-					return Some(syn::Error::new_spanned(arg.pat.clone(), "only simple bound arguments are allowed in CUDA function declarations")
-						.to_compile_error().into());
-				}
-				let (disallowed_ty, err_ts) = is_type_disallowed(&arg.ty);
-				if disallowed_ty {
-					if let Some(err_ts) = err_ts {
-						return Some(err_ts);
-					} else {
-						return Some(syn::Error::new_spanned(arg.ty.clone(), format!("arguments of type `{:?}` are not allowed in CUDA function declarations", &arg.ty))
-							.to_compile_error().into());
-					}
-				}
-			}
-		}
-	}
-	None
+	Ok(())
 }
 
 fn process_host_fn(f: syn::ItemFn) -> TokenStream {
@@ -191,8 +81,7 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 	use syn::{FnArg, Pat};
 
 	if f.unsafety.is_none() {
-		return syn::Error::new_spanned(f, "#[global] functions are required to be marked as unsafe")
-			.to_compile_error().into()
+		return syn::Error::new_spanned(f, "#[global] functions are required to be marked as unsafe").to_compile_error();
 	}
 
 	let args_decl = f.decl.inputs;
@@ -215,7 +104,7 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 	let args = quote!{ #(#args),* };
 
 	let fn_ident = f.ident.clone();
-	let fn_ident_c = format!("_rust_cuda_macros_cwrapper_{}", fn_ident);
+	let fn_ident_c = format!("rust_cuda_macros_cwrapper_{}", fn_ident);
 	let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
 
 	let vis = f.vis;
@@ -246,8 +135,7 @@ fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 				(Host, Device) | (Device, Host) => {
 					device_host = Some(i);
 				},
-				_ => return syn::Error::new_spanned(a, "invalid combination of CUDA function attributes")
-						.to_compile_error().into()
+				_ => return syn::Error::new_spanned(a, "invalid combination of CUDA function attributes").to_compile_error()
 			}
 		}
 	}
@@ -257,8 +145,8 @@ fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 	}
 
 	// Check function signatures
-	if let Some(err) = check_function_signature(&f) {
-		return err;
+	if let Err(e) = check_function_signature(&f) {
+		return e.to_compile_error();
 	}
 
 	// Process functions with both #[device] & #[host]
@@ -299,6 +187,8 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 				}
 			}
 		},
+		// TODO: syn::Item::Static => /* https://stackoverflow.com/questions/2619296/how-to-return-a-single-variable-from-a-cuda-kernel-function */,
+		// TODO: syn::Item::Const => /* ... */,
 		_ => {
 			if direct {
 				syn::Error::new_spanned(item, "expected function or inline module")

@@ -1,13 +1,20 @@
 
+extern crate tempdir;
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::fs;
 
+use tempdir::TempDir;
+
 
 pub fn build() {
-	let dir = PathBuf::from(std::env::var_os("OUT_DIR")
+	let out_dir = PathBuf::from(std::env::var_os("OUT_DIR")
 		.expect("expected to be called in a build.rs script")).join("cuda_macros");
-	println!("cargo:rustc-env=CUDA_MACROS_OUT_DIR={}", dir.display());
+	let dir = out_dir.join("src");
+	let actual_target_dir = out_dir.join("target");
+	let temp = TempDir::new("cuda-macros").unwrap();
+	let target_dir = temp.path().join("target");
 
 	// Ensure output directory is empty & exists
 	if dir.is_file() {
@@ -23,12 +30,13 @@ pub fn build() {
 	let mut command = Command::new(env!("CARGO"));
 	command.arg("check")
 		.arg("--all-targets")
-		.arg("-j")
-		.arg(std::env::var("NUM_JOBS").unwrap())
 		.arg("--target")
-		.arg(std::env::var("TARGET").unwrap());
+		.arg(std::env::var("TARGET").unwrap())
+		.arg("--target-dir")
+		.arg(target_dir)
+		.env("CUDA_MACROS_OUT_DIR", dir);
 
-	let mut features = vec!["_output".to_string()];
+	let mut features = vec![];
 	for (key, _) in std::env::vars() {
 		if key.starts_with("CARGO_FEATURE_") {
 			features.push(key["CARGO_FEATURE_".len()..].to_string())
@@ -47,8 +55,8 @@ pub fn build() {
 	}
 
 	// Compile sources that were output at the previous step
-	let libname = format!("rust_cuda_macros_{}_{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+	let libname = format!("cuda_macros_{}_{}", std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
 	// TODO
-	cc::Build::new().cuda(true);
+	cc::Build::new().cuda(true).compile(&libname);
 	unimplemented!()
 }

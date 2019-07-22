@@ -20,3 +20,4 @@ cuda = "0.4.0-pre.2"
 proc-macro2 = "0.4.30"
 syn = { version = "0.15.39", features = ["full", "extra-traits"] }
 quote = "0.6.13"
+chrono = "0.4.7"
