@@ -10,6 +10,16 @@ const RUST_VAR_NUM_TYPES  : &'static [&'static str] = &["::std::os::raw::c_float
 const C_VAR_NUM_TYPES     : &'static [&'static str] = &["float", "double", "char", "signed char", "unsigned char", "short", "unsigned short", "int", "unsigned int", "long", "unsigned long", "long long", "unsigned long long"];
 
 
+pub fn check_ident_valid(ident: &syn::Ident) -> Result<(), syn::Error> {
+	if ident.to_string().starts_with("rust_cuda_macros_") {
+		Err(syn::Error::new_spanned(ident.clone(), "identifiers starting with 'rust_cuda_macros_' are not allowed"))
+	} else if ident.to_string().starts_with("_rust_cuda_macros_") {
+		Err(syn::Error::new_spanned(ident.clone(), "identifiers starting with '_rust_cuda_macros_' are not allowed"))
+	} else {
+		Ok(())
+	}
+}
+
 /// Converts a Rust type into a C type
 pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	use syn::Type;
@@ -17,7 +27,6 @@ pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::E
 	match &ty {
 		Type::Slice(_) | Type::Array(_) => Err(None), // TODO: Auto-upload slices & arrays to CUDA
 		Type::Ptr(ptr) => {
-			let mutable = ptr.mutability.is_some();
 			match (&ptr.mutability, &ptr.const_token) {
 				(Some(m), Some(c)) => return Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
 				_ => {}
@@ -82,7 +91,10 @@ pub fn rust_fn_arg_to_c(arg: &syn::FnArg) -> Result<Option<(Cow<'static, str>, s
 				Pat::Wild(_) => Ok(None),
 				Pat::Ident(pat) if pat.by_ref.is_none() && pat.mutability.is_none() && pat.subpat.is_none() => {
 					match conv::rust_type_to_c(&arg.ty) {
-						Ok(t) => Ok(Some((t, pat.ident.clone()))),
+						Ok(t) => {
+							check_ident_valid(&pat.ident)?;
+							Ok(Some((t, pat.ident.clone())))
+						},
 						Err(Some(e)) => Err(e),
 						Err(None) => Err(syn::Error::new_spanned(arg.ty.clone(), "arguments of this type are not allowed")),
 					}

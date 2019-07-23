@@ -10,6 +10,7 @@ use quote::ToTokens;
 
 pub mod conv;
 pub mod write;
+pub mod file;
 
 
 pub fn tokens_join2(t1: impl ToTokens, t2: impl ToTokens) -> TokenStream {

@@ -3,13 +3,10 @@ extern crate cuda;
 extern crate cuda_macros_util;
 extern crate cuda_macros_impl;
 
-#[cfg(feature="build")]
 extern crate cc;
 
-#[cfg(feature="build")]
-mod build;
-#[cfg(feature="build")]
-pub use build::build;
+mod build_utils;
+pub use build_utils::build;
 
 pub use cuda_macros_impl::{host, device, global};
 

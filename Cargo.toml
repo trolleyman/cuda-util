@@ -14,14 +14,9 @@ cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros-impl/cuda_9_1" , "cuda-macros-util/c
 cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros-impl/cuda_9_2" , "cuda-macros-util/cuda_9_2" ]
 cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-impl/cuda_10_0", "cuda-macros-util/cuda_10_0"]
 cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-impl/cuda_10_1", "cuda-macros-util/cuda_10_1"]
-# Used to enable `cuda_macros::build`
-build = ["cc"]
-# Internal use only. Used to output bindings & source code.
-_output = ["cuda-macros-impl/_output"]
 
 [dependencies]
 cuda = "0.4.0-pre.2"
 cuda-macros-impl = { path = "./cuda-macros-impl" }
 cuda-macros-util = { path = "./cuda-macros-util" }
-cc = { version = "1.0", optional = true }
-tempdir = "0.3.7"
+cc = "1.0"

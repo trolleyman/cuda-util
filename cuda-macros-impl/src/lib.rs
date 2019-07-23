@@ -5,11 +5,8 @@ extern crate cuda;
 extern crate proc_macro2;
 extern crate syn;
 extern crate quote;
-
-#[cfg(feature="_output")]
 extern crate fs2;
 
-#[cfg(feature="_output")]
 mod output;
 
 
@@ -18,13 +15,10 @@ use syn::parse_macro_input;
 use quote::{quote, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_util as util;
 use cuda_macros_util::FunctionType;
 
 
 fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
-	use syn::{FnArg, Pat};
-
 	if f.attrs.len() != 0 {
 		return Err(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed"));
 	}
@@ -58,12 +52,13 @@ fn process_host_fn(f: syn::ItemFn) -> TokenStream {
 }
 
 fn process_device_fn(f: syn::ItemFn) -> TokenStream {
-	let ident = f.ident.clone();
-	let vis = f.vis.clone();
-
 	// Output function
-	#[cfg(feature="_output")]
-	output::output_fn(f, FunctionType::Device);
+	if let Err(ts) = output::output_fn(&f, FunctionType::Device) {
+		return ts;
+	}
+
+	let ident = f.ident;
+	let vis = f.vis;
 
 	// Return dummy identifier that will cause a compilation error when called
 	// TODO: give a better compile time error somehow (maybe custom type?)
@@ -74,8 +69,9 @@ fn process_device_fn(f: syn::ItemFn) -> TokenStream {
 
 fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 	// Output function
-	#[cfg(feature="_output")]
-	output::output_fn(f.clone(), FunctionType::Global);
+	if let Err(ts) = output::output_fn(&f, FunctionType::Global) {
+		return ts;
+	}
 
 	// Create function wrapper & link to CUDA function
 	use syn::{FnArg, Pat};
