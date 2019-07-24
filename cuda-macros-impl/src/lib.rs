@@ -1,6 +1,7 @@
 
-extern crate proc_macro;
 extern crate cuda_macros_util;
+
+extern crate proc_macro;
 extern crate cuda;
 extern crate proc_macro2;
 extern crate syn;
@@ -15,14 +16,10 @@ use syn::parse_macro_input;
 use quote::{quote, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_util::FunctionType;
+use cuda_macros_util::{conv, FunctionType};
 
 
 fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
-	if f.attrs.len() != 0 {
-		// TODO: #[include(cstdio)], #[cfg(<soemthing>)], etc.
-		return Err(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed"));
-	}
 	if let Some(item) = &f.constness {
 		return Err(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed"));
 	}
@@ -141,6 +138,13 @@ fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 		f.attrs.remove(i);
 	}
 
+	// Check if item is enabled
+	match conv::is_item_enabled(&f.attrs, conv::CfgType::Declaration) {
+		Ok(true) => {},
+		Ok(false) => return TokenStream::new(), // Skip function
+		Err(e) => return e.to_compile_error(),
+	}
+
 	// Check function signatures
 	if let Err(e) = check_function_signature(&f) {
 		return e.to_compile_error();
@@ -186,6 +190,10 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 		},
 		// TODO: syn::Item::Static => /* https://stackoverflow.com/questions/2619296/how-to-return-a-single-variable-from-a-cuda-kernel-function */,
 		// TODO: syn::Item::Const => /* ... */,
+		// TODO: syn::Item::Type => /* (type alias) */
+		// TODO: syn::Item::Struct => /* ... */
+		// TODO: syn::Item::Enum => /* ... */
+		// TODO: syn::Item::Union => /* ... */
 		_ => {
 			if direct {
 				syn::Error::new_spanned(item, "expected function or inline module")

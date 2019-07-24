@@ -1,6 +1,7 @@
 
 use std::borrow::Cow;
 
+use super::FunctionType;
 use super::conv;
 
 
@@ -9,16 +10,6 @@ const C_FIXED_NUM_TYPES   : &'static [&'static str] = &["float", "double", "int8
 const RUST_VAR_NUM_TYPES  : &'static [&'static str] = &["::std::os::raw::c_float", "::std::os::raw::c_double", "::std::os::raw::c_char", "::std::os::raw::c_schar", "::std::os::raw::c_uchar", "::std::os::raw::c_short", "::std::os::raw::c_ushort", "::std::os::raw::c_int", "::std::os::raw::c_uint", "::std::os::raw::c_long", "::std::os::raw::c_ulong", "::std::os::raw::c_longlong", "::std::os::raw::c_ulonglong"];
 const C_VAR_NUM_TYPES     : &'static [&'static str] = &["float", "double", "char", "signed char", "unsigned char", "short", "unsigned short", "int", "unsigned int", "long", "unsigned long", "long long", "unsigned long long"];
 
-
-pub fn check_ident_valid(ident: &syn::Ident) -> Result<(), syn::Error> {
-	if ident.to_string().starts_with("rust_cuda_macros_") {
-		Err(syn::Error::new_spanned(ident.clone(), "identifiers starting with 'rust_cuda_macros_' are not allowed"))
-	} else if ident.to_string().starts_with("_rust_cuda_macros_") {
-		Err(syn::Error::new_spanned(ident.clone(), "identifiers starting with '_rust_cuda_macros_' are not allowed"))
-	} else {
-		Ok(())
-	}
-}
 
 /// Converts a Rust type into a C type
 pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::Error>> {
@@ -44,14 +35,14 @@ pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::E
 		Type::Path(path) => rust_type_path_to_c(&path),
 		Type::Paren(inner) => rust_type_to_c(&inner.elem),
 		Type::Group(inner) => rust_type_to_c(&inner.elem),
-		Type::Infer(inner) => Err(Some(syn::Error::new_spanned(inner.clone(), "arguments with inferred types are not allowed in CUDA function declarations")))
+		Type::Infer(inner) => Err(Some(syn::Error::new_spanned(inner.clone(), "inferred types are not supported")))
 	}
 }
 
 /// Converts a Rust type path into a C type
 pub fn rust_type_path_to_c(type_path: &syn::TypePath) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	if let Some(q) = &type_path.qself {
-		Err(Some(syn::Error::new_spanned(q.lt_token.clone(), "`<...>::type` style paths in CUDA function declarations are not allowed")))
+		Err(Some(syn::Error::new_spanned(q.lt_token.clone(), "`<...>::type` style paths are not supported")))
 	} else {
 		rust_path_to_c(&type_path.path)
 	}
@@ -92,10 +83,7 @@ pub fn rust_fn_arg_to_c(arg: &syn::FnArg) -> Result<Option<(Cow<'static, str>, s
 				Pat::Wild(_) => Ok(None),
 				Pat::Ident(pat) if pat.by_ref.is_none() && pat.mutability.is_none() && pat.subpat.is_none() => {
 					match conv::rust_type_to_c(&arg.ty) {
-						Ok(t) => {
-							check_ident_valid(&pat.ident)?;
-							Ok(Some((t, pat.ident.clone())))
-						},
+						Ok(t) => Ok(Some((t, pat.ident.clone()))),
 						Err(Some(e)) => Err(e),
 						Err(None) => Err(syn::Error::new_spanned(arg.ty.clone(), "arguments of this type are not allowed")),
 					}
@@ -104,4 +92,47 @@ pub fn rust_fn_arg_to_c(arg: &syn::FnArg) -> Result<Option<(Cow<'static, str>, s
 			}
 		}
 	}
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum CfgType {
+	Declaration,
+	DeviceCode,
+	HostCode,
+}
+
+/// Check if all of the attributes are valid and mean that the item/expression it is attached to is enabled
+pub fn is_item_enabled<'a, I: IntoIterator<Item=&'a syn::Attribute>>(attrs: I, cfg_type: CfgType) -> Result<bool, syn::Error> {
+	for attr in attrs.into_iter() {
+		if !is_item_enabled_attr(attr, cfg_type)? {
+			return Ok(false);
+		}
+	}
+	Ok(true)
+}
+
+/// Check if an attribute is valid and means that the item/expression it is attached to is enabled
+pub fn is_item_enabled_attr(attr: &syn::Attribute, _cfg_type: CfgType) -> Result<bool, syn::Error> {
+	use syn::Meta;
+
+	if FunctionType::try_from_attr(attr).is_some() {
+		return Ok(true);
+	}
+
+	if let syn::AttrStyle::Inner(_) = attr.style {
+		return Err(syn::Error::new_spanned(attr.clone(), "inner attributes are not supported"));
+	}
+
+	if super::type_path_matches(&attr.path, "::cfg") {
+		match attr.parse_meta() {
+			Ok(Meta::Word(meta)) => return Err(syn::Error::new_spanned(meta.clone(), "no arguments specified to cfg")),
+			Ok(Meta::List(_meta)) => {
+				// TODO
+				unimplemented!();
+			},
+			Ok(Meta::NameValue(meta)) => return Err(syn::Error::new_spanned(meta.clone(), "cfg meta syntax not supported")),
+			Err(_) => return Err(syn::Error::new_spanned(attr.clone(), "cfg meta syntax not supported"))
+		}
+	}
+	Err(syn::Error::new_spanned(attr.path.clone(), "unsupported attribute"))
 }

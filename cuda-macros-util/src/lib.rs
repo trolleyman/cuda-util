@@ -23,6 +23,14 @@ pub fn tokens_join2(t1: impl ToTokens, t2: impl ToTokens) -> TokenStream {
 	t
 }
 
+pub fn tokens_join<I, T>(ts: I) -> TokenStream where I: IntoIterator<Item=T>, T: ToTokens {
+	let mut t = TokenStream::new();
+	for ts in ts {
+		ts.to_tokens(&mut t);
+	}
+	t
+}
+
 /// Checks if an identifier has the value given
 pub fn ident_eq(ident: &syn::Ident, value: &str) -> bool {
 	ident.to_string() == value
