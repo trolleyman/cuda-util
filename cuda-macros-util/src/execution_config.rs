@@ -1,15 +1,4 @@
 
-extern crate cuda;
-extern crate cuda_macros_util;
-extern crate cuda_macros_impl;
-
-extern crate cc;
-
-mod build_utils;
-pub use build_utils::build;
-
-pub use cuda_macros_impl::{host, device, global};
-
 use cuda::ffi::driver_types::cudaStream_t;
 
 
@@ -57,7 +46,7 @@ macro_rules! impl_from_execution_config {
 					grid_size: u32_arr_expr!($gs, grid_size),
 					block_size: u32_arr_expr!($bs, block_size),
 					shared_mem_size,
-					cuda_stream: ::std::ptr::null_mut() as ::cuda::ffi::driver_types::cudaStream_t,
+					cuda_stream: std::ptr::null_mut() as cudaStream_t,
 				}
 			}
 		}
@@ -67,7 +56,7 @@ macro_rules! impl_from_execution_config {
 					grid_size: u32_arr_expr!($gs, grid_size),
 					block_size: u32_arr_expr!($bs, block_size),
 					shared_mem_size: 0,
-					cuda_stream: ::std::ptr::null_mut() as ::cuda::ffi::driver_types::cudaStream_t,
+					cuda_stream: std::ptr::null_mut() as cudaStream_t,
 				}
 			}
 		}

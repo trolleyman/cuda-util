@@ -87,10 +87,10 @@ fn write_fn_decl(of: &mut FileLike, f: &syn::ItemFn, fn_type: FunctionType, fn_h
 	let ret: Cow<'static, str> = match &f.decl.output {
 		syn::ReturnType::Default => "void".into(),
 		syn::ReturnType::Type(_, ty) => conv::rust_type_to_c(&ty)
-			.map_err(|e| e.unwrap_or_else(|| syn::Error::new_spanned(ty, "invalid type for CUDA function")))?,
+			.map_err(|e| e.unwrap_or_else(|| syn::Error::new_spanned(ty, "invalid return type")))?,
 	};
 	if fn_type == FunctionType::Global && ret != "void" {
-		return Err(syn::Error::new_spanned(f.decl.output.clone(), "#[global] CUDA functions must return void"))?;
+		return Err(syn::Error::new_spanned(f.decl.output.clone(), "invalid return type: #[global] functions must return nothing"))?;
 	}
 	let mut args = vec![];
 	if is_wrapper {
@@ -134,15 +134,21 @@ fn write_cuda_fn_body(of: &mut FileLike, stmts: &[syn::Stmt]) -> Result<(), Tran
 	Ok(())
 }
 
-fn write_stmt(mut of: FileLikeIndent, stmt: &syn::Stmt, _is_last: bool) -> Result<(), TransError> {
+fn write_stmt(mut of: FileLikeIndent, stmt: &syn::Stmt, is_last: bool) -> Result<(), TransError> {
 	use syn::Stmt;
 
 	match stmt {
 		Stmt::Local(_) => unimplemented!(),
 		Stmt::Item(_) => unimplemented!(),
-		Stmt::Expr(e) => write_expr(of.incr(), &e),
+		Stmt::Expr(e) if is_last => {
+			write!(of, "return ")?;
+			write_expr(of.incr(), &e)?;
+			write!(of, ";")?;
+		},
+		Stmt::Expr(e) => Err(syn::Error::new_spanned(e.clone(), "missed semicolon"))?,
 		Stmt::Semi(_, _) => unimplemented!(),
 	}
+	Ok(())
 }
 
 fn write_expr(mut of: FileLikeIndent, e: &syn::Expr) -> Result<(), TransError> {

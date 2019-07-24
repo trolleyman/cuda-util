@@ -1,22 +1,8 @@
-[package]
-name = "cuda-macros"
-version = "0.1.0"
-authors = ["Callum Tolley <cgtrolley@gmail.com>"]
-edition = "2018"
-
-[features]
-cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros-impl/cuda_6_5" , "cuda-macros-util/cuda_6_5" ]
-cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros-impl/cuda_7_0" , "cuda-macros-util/cuda_7_0" ]
-cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros-impl/cuda_7_5" , "cuda-macros-util/cuda_7_5" ]
-cuda_8_0  = ["cuda/cuda_8_0" , "cuda-macros-impl/cuda_8_0" , "cuda-macros-util/cuda_8_0" ]
-cuda_9_0  = ["cuda/cuda_9_0" , "cuda-macros-impl/cuda_9_0" , "cuda-macros-util/cuda_9_0" ]
-cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros-impl/cuda_9_1" , "cuda-macros-util/cuda_9_1" ]
-cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros-impl/cuda_9_2" , "cuda-macros-util/cuda_9_2" ]
-cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-impl/cuda_10_0", "cuda-macros-util/cuda_10_0"]
-cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-impl/cuda_10_1", "cuda-macros-util/cuda_10_1"]
-
-[dependencies]
-cuda = "0.4.0-pre.2"
-cuda-macros-impl = { path = "./cuda-macros-impl" }
-cuda-macros-util = { path = "./cuda-macros-util" }
-cc = "1.0"
+[workspace]
+members = [
+	"cuda-macros",
+	"cuda-macros-impl",
+	"cuda-macros-util",
+	"cuda-macros-build",
+	"cuda-macros-test"
+]

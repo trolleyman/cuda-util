@@ -20,6 +20,7 @@ use cuda_macros_util::FunctionType;
 
 fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
 	if f.attrs.len() != 0 {
+		// TODO: #[include(cstdio)], #[cfg(<soemthing>)], etc.
 		return Err(syn::Error::new_spanned(f.attrs[0].clone(), "attributes on CUDA functions are not allowed"));
 	}
 	if let Some(item) = &f.constness {

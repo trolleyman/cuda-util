@@ -28,10 +28,11 @@ pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::E
 		Type::Slice(_) | Type::Array(_) => Err(None), // TODO: Auto-upload slices & arrays to CUDA
 		Type::Ptr(ptr) => {
 			match (&ptr.mutability, &ptr.const_token) {
-				(Some(m), Some(c)) => return Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
-				_ => {}
+				(Some(m), Some(c)) => Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
+				(None, Some(_)) => Ok(format!("{}*", rust_type_to_c(&ptr.elem)?).into()),
+				(Some(_), None) => Ok(format!("const {}*", rust_type_to_c(&ptr.elem)?).into()),
+				(None, None) => Err(Some(syn::Error::new_spanned(ptr.clone(), "pointer must be mut or const"))),
 			}
-			Ok(format!("{}*", rust_type_to_c(&ptr.elem)?).into())
 		},
 		Type::Reference(_) => Err(None), // TODO: Auto-uploading (?)
 		Type::BareFn(_) | Type::Never(_) | Type::TraitObject(_) | Type::ImplTrait(_) | Type::Macro(_) | Type::Verbatim(_) => Err(None),
