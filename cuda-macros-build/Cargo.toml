@@ -5,6 +5,7 @@ authors = ["Callum Tolley <cgtrolley@gmail.com>"]
 edition = "2018"
 
 [features]
+# These aren't used directly, but are input into the `cargo check` command that is run.
 cuda_6_5  = ["cuda/cuda_6_5" ]
 cuda_7_0  = ["cuda/cuda_7_0" ]
 cuda_7_5  = ["cuda/cuda_7_5" ]
@@ -18,3 +19,5 @@ cuda_10_1 = ["cuda/cuda_10_1"]
 [dependencies]
 cuda = "0.4.0-pre.2"
 cc = "1.0"
+lazy_static = "1.3.0"
+whoami = "0.5.3"
