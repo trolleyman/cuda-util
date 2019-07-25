@@ -128,7 +128,7 @@ pub fn is_item_enabled_attr(attr: &syn::Attribute, _cfg_type: CfgType) -> Result
 			Ok(Meta::Word(meta)) => return Err(syn::Error::new_spanned(meta.clone(), "no arguments specified to cfg")),
 			Ok(Meta::List(_meta)) => {
 				// TODO
-				unimplemented!();
+				unimplemented!("#[cfg(<option>)]");
 			},
 			Ok(Meta::NameValue(meta)) => return Err(syn::Error::new_spanned(meta.clone(), "cfg meta syntax not supported")),
 			Err(_) => return Err(syn::Error::new_spanned(attr.clone(), "cfg meta syntax not supported"))

@@ -147,7 +147,7 @@ fn expr_requires_brackets(e: &syn::Expr) -> bool {
 	use syn::Expr;
 
 	match e {
-		Expr::Path(_) => false,
+		Expr::Path(_) | Expr::Field(_) => false,
 		_ => true
 	}
 }
@@ -222,7 +222,7 @@ fn write_expr_brackets_if_required<F: FileLike>(mut of: FileLikeIndent<F>, e: &s
 }
 
 fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(), TransError> {
-	use syn::{UnOp, Expr};
+	use syn::{UnOp, Expr, Member};
 
 	match e {
 		Expr::Box(e) => Err(syn::Error::new_spanned(e.clone(), "box expressions are not supported"))?,
@@ -336,8 +336,15 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 		Expr::AssignOp(_e) => {
 			unimplemented!("Expr::AssignOp"); // TODO
 		},
-		Expr::Field(_e) => {
-			unimplemented!("Expr::Field"); // TODO
+		Expr::Field(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write_expr_brackets_if_required(of.clone(), &e.base)?;
+				write!(&mut of, ".")?;
+				match &e.member {
+					Member::Unnamed(i) => Err(syn::Error::new_spanned(i.clone(), "unnamed field accesses are not supported"))?,
+					Member::Named(name) => write!(&mut of, "{}", name)?,
+				}
+			}
 		},
 		Expr::Index(_e) => {
 			unimplemented!("Expr::Index"); // TODO
