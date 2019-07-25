@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Callum Tolley <cgtrolley@gmail.com>"]
 edition = "2018"
 
+[package.metadata.docs.rs]
+features = ["cuda_10_1"]
+default-target = "x86_64-unknown-linux-gnu"
+
 [features]
 cuda_6_5  = ["cuda-macros-impl/cuda_6_5" , "cuda-macros-util/cuda_6_5" ]
 cuda_7_0  = ["cuda-macros-impl/cuda_7_0" , "cuda-macros-util/cuda_7_0" ]
