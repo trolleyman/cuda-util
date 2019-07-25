@@ -206,6 +206,7 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 }
 
 
+/// CUDA `__host__` function annotation
 #[proc_macro_attribute]
 pub fn host(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	let attr = TokenStream::from(attr);
@@ -217,6 +218,7 @@ pub fn host(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> pro
 	process_all_fns(item, FunctionType::Host, true).into()
 }
 
+/// CUDA `__device__` function annotation
 #[proc_macro_attribute]
 pub fn device(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	let attr = TokenStream::from(attr);
@@ -228,6 +230,7 @@ pub fn device(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> p
 	process_all_fns(item, FunctionType::Device, true).into()
 }
 
+/// CUDA `__global__` function annotation
 #[proc_macro_attribute]
 pub fn global(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	let attr = TokenStream::from(attr);
