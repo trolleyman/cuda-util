@@ -46,6 +46,7 @@ fn write_header_intro(of: &mut FileLike) -> Result<(), TransError> {
 #pragma once
 
 #include <cstdint>
+#include <stdbool.h>
 
 #include <cuda_runtime.h>
 
@@ -132,10 +133,23 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn) -> Result<(),
 }
 
 fn write_cuda_fn_body<F: FileLike>(of: &mut F, stmts: &[syn::Stmt]) -> Result<(), TransError> {
+	write_stmts(FileLikeIndent::new(of, 1), stmts)
+}
+
+fn write_stmts<F: FileLike>(mut of: FileLikeIndent<F>, stmts: &[syn::Stmt]) -> Result<(), TransError> {
 	for (i, stmt) in stmts.iter().enumerate() {
-		write_stmt(FileLikeIndent::new(of, 1), stmt, i == stmts.len())?;
+		write_stmt(of.clone(), stmt, i == stmts.len())?;
 	}
 	Ok(())
+}
+
+fn expr_requires_brackets(e: &syn::Expr) -> bool {
+	use syn::Expr;
+
+	match e {
+		Expr::Path(_) => false,
+		_ => true
+	}
 }
 
 fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, stmt: &syn::Stmt, is_last: bool) -> Result<(), TransError> {
@@ -187,7 +201,7 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, stmt: &syn::Stmt, is_last:
 			write_expr(of.incr(), &e)?;
 			write!(&mut of, ";")?;
 		},
-		Stmt::Expr(e) => Err(syn::Error::new_spanned(e.clone(), "missed semicolon"))?,
+		Stmt::Expr(e) => write_expr(of.clone(), &e)?,// TODO: figure out how this works Err(syn::Error::new_spanned(e.clone(), "missed semicolon"))?,
 		Stmt::Semi(e, _) => {
 			write_expr(of.clone(), &e)?;
 			writeln!(&mut of, ";")?;
@@ -196,45 +210,108 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, stmt: &syn::Stmt, is_last:
 	Ok(())
 }
 
+fn write_expr_brackets_if_required<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(), TransError> {
+	if expr_requires_brackets(e) {
+		write!(&mut of, "(")?;
+	}
+	write_expr(of.incr(), e)?;
+	if expr_requires_brackets(e) {
+		write!(&mut of, ")")?;
+	}
+	Ok(())
+}
+
 fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(), TransError> {
-	use syn::Expr;
+	use syn::{UnOp, Expr};
 
 	match e {
 		Expr::Box(e) => Err(syn::Error::new_spanned(e.clone(), "box expressions are not supported"))?,
 		Expr::InPlace(e) => Err(syn::Error::new_spanned(e.clone(), "placement expressions are not supported"))?,
-		Expr::Array(_e) => {
-			unimplemented!(); // TODO
+		Expr::Array(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write!(&mut of, "[")?;
+				for (i, elem) in e.elems.iter().enumerate() {
+					write_expr(of.incr(), &elem)?;
+					if i < e.elems.len() - 1 {
+						write!(&mut of, ",")?;
+					}
+				}
+				write!(&mut of, "]")?;
+			}
 		},
-		Expr::Call(_e) => {
-			unimplemented!(); // TODO
+		Expr::Call(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write_expr_brackets_if_required(of.clone(), &*e.func)?;
+				write!(&mut of, "(")?;
+				for (i, elem) in e.args.iter().enumerate() {
+					write_expr(of.incr(), &elem)?;
+					if i < e.args.len() - 1 {
+						write!(&mut of, ", ")?;
+					}
+				}
+				write!(&mut of, ")")?;
+			}
 		},
-		Expr::MethodCall(e) => Err(syn::Error::new_spanned(e.clone(), "method call expressions are not supported"))?,
+		Expr::MethodCall(e) =>{
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				if e.turbofish.is_some() {
+					Err(syn::Error::new_spanned(e.turbofish.clone(), "generic methods are not supported"))?;
+				}
+				write_expr_brackets_if_required(of.clone(), &*e.receiver)?;
+				write!(&mut of, ",")?;
+				write!(&mut of, "{}", &e.method)?;
+				write!(&mut of, "(")?;
+				for (i, elem) in e.args.iter().enumerate() {
+					write_expr(of.incr(), &elem)?;
+					if i < e.args.len() - 1 {
+						write!(&mut of, ", ")?;
+					}
+				}
+				write!(&mut of, ")")?;
+			}
+		},
 		Expr::Tuple(e) => Err(syn::Error::new_spanned(e.clone(), "tuple expressions are not supported"))?,
-		Expr::Binary(_e) => {
-			unimplemented!(); // TODO
+		Expr::Binary(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write_expr_brackets_if_required(of.clone(), &*e.left)?;
+				write!(&mut of, " ")?;
+				write_binop(of.clone(), &e.op)?;
+				write!(&mut of, " ")?;
+				write_expr_brackets_if_required(of.clone(), &*e.left)?;
+			}
 		},
-		Expr::Unary(_e) => {
-			unimplemented!(); // TODO
+		Expr::Unary(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				let op = match &e.op {
+					UnOp::Deref(_) => '*',
+					UnOp::Not(_) => '!',
+					UnOp::Neg(_) => '-',
+				};
+				write!(&mut of, "{}", op)?;
+				write_expr(of.clone(), &*e.expr)?;
+			}
 		},
-		Expr::Lit(_e) => {
-			unimplemented!(); // TODO
+		Expr::Lit(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write_lit(of.clone(), &e.lit)?;
+			}
 		},
 		Expr::Cast(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Cast"); // TODO
 		},
 		Expr::Type(e) => Err(syn::Error::new_spanned(e.clone(), "type ascription is not supported"))?,
 		Expr::Let(e) => Err(syn::Error::new_spanned(e.clone(), "let guards are not supported"))?,
 		Expr::If(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::If"); // TODO
 		},
 		Expr::While(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::While"); // TODO
 		},
 		Expr::ForLoop(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::ForLoop"); // TODO
 		},
 		Expr::Loop(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Loop"); // TODO
 		},
 		Expr::Match(e) => {
 			// TODO
@@ -242,41 +319,60 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 		},
 		Expr::Closure(e) => Err(syn::Error::new_spanned(e.clone(), "closures are not supported"))?,
 		Expr::Unsafe(e) => Err(syn::Error::new_spanned(e.clone(), "unsafe blocks are not supported"))?,
-		Expr::Block(_e) => {
-			unimplemented!(); // TODO
+		Expr::Block(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				writeln!(&mut of, "{{")?;
+				write_stmts(of.incr(), &e.block.stmts)?;
+				writeln!(&mut of, "}}")?;
+			}
 		},
-		Expr::Assign(_e) => {
-			unimplemented!(); // TODO
+		Expr::Assign(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write_expr(of.incr(), &e.left)?;
+				write!(&mut of, " = ")?;
+				write_expr(of.incr(), &e.right)?;
+			}
 		},
 		Expr::AssignOp(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::AssignOp"); // TODO
 		},
 		Expr::Field(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Field"); // TODO
 		},
 		Expr::Index(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Index"); // TODO
 		},
 		Expr::Range(e) => Err(syn::Error::new_spanned(e.clone(), "range expressions are not supported"))?,
-		Expr::Path(e) => Err(syn::Error::new_spanned(e.clone(), "paths are not supported"))?,
+		Expr::Path(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				if e.qself.is_some() || e.path.leading_colon.is_some() || e.path.segments.len() != 1 {
+					Err(syn::Error::new_spanned(e.clone(), "paths are not supported"))?;
+				}
+				let segment = &e.path.segments[0];
+				if segment.arguments != syn::PathArguments::None {
+					Err(syn::Error::new_spanned(e.clone(), "paths with generic arguments are not supported"))?;
+				}
+				write!(&mut of, "{}", &segment.ident)?;
+			}
+		},
 		Expr::Reference(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Reference"); // TODO
 		},
 		Expr::Break(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Break"); // TODO
 		},
 		Expr::Continue(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Continue"); // TODO
 		},
 		Expr::Return(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Return"); // TODO
 		},
 		Expr::Macro(e) => Err(syn::Error::new_spanned(e.clone(), "macros are not supported"))?,
 		Expr::Struct(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Struct"); // TODO
 		},
 		Expr::Repeat(_e) => {
-			unimplemented!(); // TODO
+			unimplemented!("Expr::Repeat"); // TODO
 		},
 		Expr::Paren(syn::ExprParen{attrs, expr, ..}) | Expr::Group(syn::ExprGroup{attrs, expr, ..}) => {
 			if conv::is_item_enabled(attrs, conv::CfgType::DeviceCode)? {
@@ -293,3 +389,78 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 	}
 	Ok(())
 }
+
+fn write_binop<F: FileLike>(mut of: FileLikeIndent<F>, op: &syn::BinOp) -> Result<(), TransError> {
+	use syn::BinOp::*;
+	let op = match op {
+		Add(_) => "+",
+		Sub(_) => "-",
+		Mul(_) => "*",
+		Div(_) => "/",
+		Rem(_) => "%",
+		And(_) => "&&",
+		Or(_) => "||",
+		BitXor(_) => "^",
+		BitAnd(_) => "&",
+		BitOr(_) => "|",
+		Shl(_) => "<<",
+		Shr(_) => ">>",
+		Eq(_) => "==",
+		Lt(_) => "<",
+		Le(_) => "<=",
+		Ne(_) => "!=",
+		Ge(_) => ">=",
+		Gt(_) => ">",
+		AddEq(_) => "+=",
+		SubEq(_) => "-=",
+		MulEq(_) => "*=",
+		DivEq(_) => "/=",
+		RemEq(_) => "%=",
+		BitXorEq(_) => "^=",
+		BitAndEq(_) => "&=",
+		BitOrEq(_) => "|=",
+		ShlEq(_) => "<<=",
+		ShrEq(_) => ">>=",
+	};
+	write!(&mut of, "{}", op)?;
+	Ok(())
+}
+
+fn write_lit<F: FileLike>(mut of: FileLikeIndent<F>, lit: &syn::Lit) -> Result<(), TransError> {
+	use syn::Lit::*;
+	use syn::{IntSuffix, FloatSuffix};
+	match lit {
+		Str(lit) => write!(&mut of, "\"{}\"", lit.value())?,
+		ByteStr(lit) => write!(&mut of, "\"{}\"", lit.value().iter().map(|&c| c as char).collect::<String>())?,
+		Byte(lit) => write!(&mut of, "(char){}", lit.value())?,
+		Char(lit) => write!(&mut of, "(uint32_t){}/*'{}'*/", lit.value() as u32, lit.value())?,
+		Int(lit) => {
+			match lit.suffix() {
+				IntSuffix::None  => write!(&mut of, "{}", lit.value())?,
+				IntSuffix::I8    => write!(&mut of, "(int8_t){}", lit.value())?,
+				IntSuffix::U8    => write!(&mut of, "(uint8_t){}", lit.value())?,
+				IntSuffix::I16   => write!(&mut of, "(int16_t){}", lit.value())?,
+				IntSuffix::U16   => write!(&mut of, "(uint16_t){}", lit.value())?,
+				IntSuffix::I32   => write!(&mut of, "(int32_t){}", lit.value())?,
+				IntSuffix::U32   => write!(&mut of, "(uint32_t){}", lit.value())?,
+				IntSuffix::I64   => write!(&mut of, "(int64_t){}", lit.value())?,
+				IntSuffix::U64   => write!(&mut of, "(uint64_t){}", lit.value())?,
+				IntSuffix::I128  => Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported"))?,
+				IntSuffix::U128  => Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported"))?,
+				IntSuffix::Isize => write!(&mut of, "(isize_t){}", lit.value())?,
+				IntSuffix::Usize => write!(&mut of, "(usize_t){}", lit.value())?,
+			}
+		},
+		Float(lit) => {
+			match lit.suffix() {
+				FloatSuffix::None => write!(&mut of, "{}", lit.value())?,
+				FloatSuffix::F32  => write!(&mut of, "(float){}", lit.value())?,
+				FloatSuffix::F64  => write!(&mut of, "(double){}", lit.value())?,
+			}
+		},
+		Bool(lit) => write!(&mut of, "{:?}", lit.value)?,
+		Verbatim(lit) => Err(syn::Error::new_spanned(lit.clone(), "unparseable literal"))?,
+	}
+	Ok(())
+}
+
