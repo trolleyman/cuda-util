@@ -1,5 +1,5 @@
 
-use std::fs::{self, File};
+use std::fs;
 use std::io;
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ lazy_static!{
 pub fn output_fn(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TokenStream> {
 	match output_fn_impl(f, fn_type) {
 		Ok(()) => Ok(()),
-		Err(TransError::IoError(e)) => Err(syn::Error::new_spanned(f.clone(), format!("failed to write function: {}", e)).to_compile_error()),
+		Err(TransError::IoError(e)) => Err(syn::Error::new_spanned(f.clone(), format!("failed to write function: {:?}", e)).to_compile_error()),
 		Err(TransError::SynError(e)) => Err(e.to_compile_error())
 	}
 }
@@ -28,20 +28,25 @@ pub fn output_fn(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TokenStre
 fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransError> {
 	if let Some(dir) = CUDA_MACROS_OUT_DIR.clone() {
 		// Output to dir
+		let lock_path = dir.join("rust_cuda_macros_header.h.lock");
 		let header_path = dir.join("rust_cuda_macros_header.h");
+		
+		// Get lock for header file
+		let lock = fs::OpenOptions::new().read(true).write(true).create(true).open(lock_path)?;
+		lock.lock_exclusive()?;
 		
 		// Open/create header file
 		let mut header_file = fs::OpenOptions::new().read(true).append(true).create(true).open(header_path)?;
-		header_file.lock_exclusive()?;
 		
 		// Write to header file
 		util::write::write_fn_header_file(&mut header_file, f, fn_type)?;
 		header_file.sync_all()?;
-		drop(header_file);
+		lock.unlock()?;
+		drop(lock);
 		
 		// Open src file
 		let src_path = dir.join(format!("{}.cu", f.ident));
-		let mut src_file = File::create(src_path)?;
+		let mut src_file = fs::OpenOptions::new().read(true).write(true).create(true).open(src_path)?;
 
 		// Write to src file
 		util::write::write_fn_cu_file(&mut src_file, f, fn_type)?;

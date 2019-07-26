@@ -1,8 +1,10 @@
 
 extern crate cc;
 extern crate whoami;
+extern crate serde_json;
 
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
@@ -11,6 +13,8 @@ use std::time::{SystemTime, Duration};
 
 use lazy_static::lazy_static;
 
+use serde_json::Value;
+
 
 lazy_static! {
 	static ref BUILD_DIRNAME: String = format!("rust_cuda-macros_build_{}_{}_{}", whoami::username(), std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
@@ -18,8 +22,8 @@ lazy_static! {
 
 
 fn update_modified_file(target_dir: impl AsRef<Path>) -> io::Result<()> {
-	let mut modified_file = fs::File::create(target_dir.as_ref().join(".modified_time"))?;
-	writeln!(modified_file, "modified")?;
+	let mut modified_file = fs::File::create(target_dir.as_ref().join("invoked.timestamp"))?;
+	writeln!(modified_file, "This file has an mtime of when this was last built.")?;
 	modified_file.sync_all()?;
 	Ok(())
 }
@@ -36,7 +40,7 @@ fn should_cleanup_dir(p: impl AsRef<Path>) -> io::Result<bool> {
 	}
 
 	// Check modified time
-	let modified = fs::metadata(p.join(".modified_time"))?.modified()?;
+	let modified = fs::metadata(p.join("invoked.timestamp"))?.modified()?;
 	let now = SystemTime::now();
 	// One month
 	let max_duration = Duration::from_secs(60 * 60 * 24 * 30);
@@ -67,10 +71,11 @@ fn is_cargo_cmd_valid() -> bool {
 }
 
 pub fn build() {
-	if std::env::var_os("CUDA_MACROS_OUT_DIR").is_some() {
+	if std::env::var_os("CUDA_MACROS_BUILD_SCRIPT").is_some() {
 		// Detected recursion: exit
 		return;
 	}
+	std::env::set_var("CUDA_MACROS_BUILD_SCRIPT", "1");
 
 	cleanup_build_dirs().ok();
 
@@ -104,32 +109,63 @@ pub fn build() {
 		return;
 	}
 
+	// Get metadata
+	let metadata = Command::new(env!("CARGO"))
+		.arg("metadata")
+		.arg("--format-version")
+		.arg("1")
+		.arg("--no-deps")
+		.output()
+		.expect("cargo metadata failed to run");
+	if !metadata.status.success() {
+		// Ignore - the actual compilation of this crate will catch any errors, and show them better than we can display them
+		return;
+	}
+	let metadata: Value = serde_json::from_slice(&metadata.stdout).unwrap();
+
+	let mut valid_features = HashSet::new();
+	for package in metadata["packages"].as_array().unwrap().iter() {
+		for feature in package["features"].as_object().unwrap().keys() {
+			if feature != "default" {
+				valid_features.insert(feature.clone());
+			}
+		}
+	}
+
 	// Compile crate & output sources
 	let mut command = Command::new(env!("CARGO"));
 	command.arg("check")
-		.arg("--all-targets")
+		//.arg("--all-targets") // TODO: Figure out which targets to compile (--lib, --bins, --tests, --benches, --examples)
 		.arg("--target")
 		.arg(std::env::var("TARGET").unwrap())
 		.arg("--target-dir")
 		.arg(target_dir)
-		.env("CUDA_MACROS_OUT_DIR", out_dir);
+		.arg("--color=always")
+		.env("CUDA_MACROS_OUT_DIR", &out_dir);
 
 	let mut features = vec![];
 	for (key, _) in std::env::vars() {
 		if key.starts_with("CARGO_FEATURE_") {
-			features.push(key["CARGO_FEATURE_".len()..].to_string())
+			let feature = &key["CARGO_FEATURE_".len()..];
+			let feature: String = feature.chars().flat_map(|c| c.to_lowercase()).collect();
+			
+			// Check if feature is valid
+			if valid_features.contains(&feature) {
+				features.push(feature)
+			}
 		}
 	}
-	command.arg("--features").arg(features.join(" "));
 
 	if std::env::var("PROFILE").unwrap() == "release" {
 		command.arg("--release");
 	}
-	let status = command.status()
+	let output = command.output()
 		.expect("failed to execute cargo check");
 
-	if !status.success() {
-		// Return - the actual compilation of this crate will catch any errors, and show them better than we can display them
+	if !output.status.success() {
+		// Ignore
+		// io::stdout().lock().write_all(&output.stdout).ok();
+		// io::stderr().lock().write_all(&output.stderr).ok();
 		return;
 	}
 

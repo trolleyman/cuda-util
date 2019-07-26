@@ -50,6 +50,12 @@ fn write_header_intro(of: &mut FileLike) -> Result<(), TransError> {
 
 #include <cuda_runtime.h>
 
+#ifdef __cplusplus
+#define EXTERN_C extern "C"
+#else
+#define EXTERN_C
+#endif
+
 typedef struct {
 	uint32_t grid_size[3];
 	uint32_t block_size[3];
@@ -109,7 +115,7 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_type: FunctionType
 	} else {
 		format!("{}", &f.ident)
 	};
-	write!(of, "{} {} {}({})", fn_type.cattr(), ret, fn_ident, args)?;
+	write!(of, "EXTERN_C {} {} {}({})", fn_type.cattr(), ret, fn_ident, args)?;
 	Ok(())
 }
 
@@ -122,13 +128,12 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn) -> Result<(),
 		}
 	}
 	let args = args.join(", ");
-	writeln!(of, "\tdim3 rust_cuda_macros_grid_size = ;")?;
-	writeln!(of, "\tdim3 rust_cuda_macros_block_size = ;")?;
+	writeln!(of, "\treturn {}<<<", &f.ident)?;
 	writeln!(of, "\t\tdim3(rust_cuda_macros_config.grid_size[0], rust_cuda_macros_config.grid_size[1], rust_cuda_macros_config.grid_size[2]),")?;
 	writeln!(of, "\t\tdim3(rust_cuda_macros_config.block_size[0], rust_cuda_macros_config.block_size[1], rust_cuda_macros_config.block_size[2]),")?;
 	writeln!(of, "\t\trust_cuda_macros_config.shared_mem_size,")?;
-	writeln!(of, "\t\trust_cuda_macros_execution_config.cuda_stream")?;
-	writeln!(of, "\t>>>{}({})", &f.ident, args)?;
+	writeln!(of, "\t\trust_cuda_macros_config.cuda_stream")?;
+	writeln!(of, "\t>>>({});", args)?;
 	Ok(())
 }
 
