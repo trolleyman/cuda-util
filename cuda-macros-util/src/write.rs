@@ -151,7 +151,7 @@ fn expr_requires_brackets(e: &syn::Expr) -> bool {
 	use syn::Expr;
 
 	match e {
-		Expr::Path(_) | Expr::Field(_) => false,
+		Expr::Path(_) | Expr::Field(_) | Expr::Lit(_) => false,
 		_ => true
 	}
 }
@@ -179,14 +179,14 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, stmt: &syn::Stmt, is_last:
 				let ty = &local.ty.as_ref().unwrap();
 				let cty = conv::rust_type_to_c(&ty.1)
 					.map_err(|e| e.unwrap_or(syn::Error::new_spanned(ty.1.clone(), "invalid type")))?;
-				write!(of.incr(), "{} ", cty)?;
+				write!(&mut of, "{} ", cty)?;
 				if !mutability {
 					write!(&mut of, "const ")?;
 				}
 				write!(&mut of, "{}", ident)?;
 				if let Some((_, init)) = &local.init {
 					write!(&mut of, " = ")?;
-					write_expr(of.incr(), &init)?;
+					write_expr(of.clone(), &init)?;
 				}
 				writeln!(&mut of, ";")?;
 			}
@@ -202,7 +202,7 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, stmt: &syn::Stmt, is_last:
 		},
 		Stmt::Expr(e) if is_last => {
 			write!(&mut of, "return ")?;
-			write_expr(of.incr(), &e)?;
+			write_expr(of.clone(), &e)?;
 			write!(&mut of, ";")?;
 		},
 		Stmt::Expr(e) => write_expr(of.clone(), &e)?,// TODO: figure out how this works Err(syn::Error::new_spanned(e.clone(), "missed semicolon"))?,
@@ -215,11 +215,12 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, stmt: &syn::Stmt, is_last:
 }
 
 fn write_expr_brackets_if_required<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(), TransError> {
-	if expr_requires_brackets(e) {
+	let brackets = expr_requires_brackets(e);
+	if brackets {
 		write!(&mut of, "(")?;
 	}
-	write_expr(of.incr(), e)?;
-	if expr_requires_brackets(e) {
+	write_expr(of.clone(), e)?;
+	if brackets {
 		write!(&mut of, ")")?;
 	}
 	Ok(())
@@ -235,7 +236,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
 				write!(&mut of, "[")?;
 				for (i, elem) in e.elems.iter().enumerate() {
-					write_expr(of.incr(), &elem)?;
+					write_expr(of.clone(), &elem)?;
 					if i < e.elems.len() - 1 {
 						write!(&mut of, ",")?;
 					}
@@ -248,7 +249,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 				write_expr_brackets_if_required(of.clone(), &*e.func)?;
 				write!(&mut of, "(")?;
 				for (i, elem) in e.args.iter().enumerate() {
-					write_expr(of.incr(), &elem)?;
+					write_expr(of.clone(), &elem)?;
 					if i < e.args.len() - 1 {
 						write!(&mut of, ", ")?;
 					}
@@ -266,7 +267,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 				write!(&mut of, "{}", &e.method)?;
 				write!(&mut of, "(")?;
 				for (i, elem) in e.args.iter().enumerate() {
-					write_expr(of.incr(), &elem)?;
+					write_expr(of.clone(), &elem)?;
 					if i < e.args.len() - 1 {
 						write!(&mut of, ", ")?;
 					}
@@ -332,9 +333,9 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 		},
 		Expr::Assign(e) => {
 			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
-				write_expr(of.incr(), &e.left)?;
+				write_expr(of.clone(), &e.left)?;
 				write!(&mut of, " = ")?;
-				write_expr(of.incr(), &e.right)?;
+				write_expr(of.clone(), &e.right)?;
 			}
 		},
 		Expr::AssignOp(_e) => {
@@ -388,7 +389,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, e: &syn::Expr) -> Result<(
 		Expr::Paren(syn::ExprParen{attrs, expr, ..}) | Expr::Group(syn::ExprGroup{attrs, expr, ..}) => {
 			if conv::is_item_enabled(attrs, conv::CfgType::DeviceCode)? {
 				write!(&mut of, "(")?;
-				write_expr(of.incr(), expr)?;
+				write_expr(of.clone(), expr)?;
 				write!(&mut of, ")")?;
 			}
 		},
@@ -441,32 +442,32 @@ fn write_lit<F: FileLike>(mut of: FileLikeIndent<F>, lit: &syn::Lit) -> Result<(
 	use syn::Lit::*;
 	use syn::{IntSuffix, FloatSuffix};
 	match lit {
-		Str(lit) => write!(&mut of, "\"{}\"", lit.value())?,
-		ByteStr(lit) => write!(&mut of, "\"{}\"", lit.value().iter().map(|&c| c as char).collect::<String>())?,
-		Byte(lit) => write!(&mut of, "(char){}", lit.value())?,
-		Char(lit) => write!(&mut of, "(uint32_t){}/*'{}'*/", lit.value() as u32, lit.value())?,
+		Str(lit) => write_string_lit(of.clone(), lit.span(), &lit.value())?,
+		ByteStr(lit) => write_string_lit(of.clone(), lit.span(), &lit.value().iter().map(|&c| c as char).collect::<String>())?,
+		Byte(lit) => write!(&mut of, "((char){}/*{:?}*/)", lit.value(), lit.value() as char)?,
+		Char(lit) => write!(&mut of, "((uint32_t){}/*{:?}*/)", lit.value() as u32, lit.value())?,
 		Int(lit) => {
 			match lit.suffix() {
 				IntSuffix::None  => write!(&mut of, "{}", lit.value())?,
-				IntSuffix::I8    => write!(&mut of, "(int8_t){}", lit.value())?,
-				IntSuffix::U8    => write!(&mut of, "(uint8_t){}", lit.value())?,
-				IntSuffix::I16   => write!(&mut of, "(int16_t){}", lit.value())?,
-				IntSuffix::U16   => write!(&mut of, "(uint16_t){}", lit.value())?,
-				IntSuffix::I32   => write!(&mut of, "(int32_t){}", lit.value())?,
-				IntSuffix::U32   => write!(&mut of, "(uint32_t){}", lit.value())?,
-				IntSuffix::I64   => write!(&mut of, "(int64_t){}", lit.value())?,
-				IntSuffix::U64   => write!(&mut of, "(uint64_t){}", lit.value())?,
+				IntSuffix::I8    => write!(&mut of, "((int8_t){})", lit.value())?,
+				IntSuffix::U8    => write!(&mut of, "((uint8_t){})", lit.value())?,
+				IntSuffix::I16   => write!(&mut of, "((int16_t){})", lit.value())?,
+				IntSuffix::U16   => write!(&mut of, "((uint16_t){})", lit.value())?,
+				IntSuffix::I32   => write!(&mut of, "((int32_t){})", lit.value())?,
+				IntSuffix::U32   => write!(&mut of, "((uint32_t){})", lit.value())?,
+				IntSuffix::I64   => write!(&mut of, "((int64_t){})", lit.value())?,
+				IntSuffix::U64   => write!(&mut of, "((uint64_t){})", lit.value())?,
 				IntSuffix::I128  => Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported"))?,
 				IntSuffix::U128  => Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported"))?,
-				IntSuffix::Isize => write!(&mut of, "(isize_t){}", lit.value())?,
-				IntSuffix::Usize => write!(&mut of, "(usize_t){}", lit.value())?,
+				IntSuffix::Isize => write!(&mut of, "((isize_t){})", lit.value())?,
+				IntSuffix::Usize => write!(&mut of, "((usize_t){})", lit.value())?,
 			}
 		},
 		Float(lit) => {
 			match lit.suffix() {
 				FloatSuffix::None => write!(&mut of, "{}", lit.value())?,
-				FloatSuffix::F32  => write!(&mut of, "(float){}", lit.value())?,
-				FloatSuffix::F64  => write!(&mut of, "(double){}", lit.value())?,
+				FloatSuffix::F32  => write!(&mut of, "((float){})", lit.value())?,
+				FloatSuffix::F64  => write!(&mut of, "((double){})", lit.value())?,
 			}
 		},
 		Bool(lit) => write!(&mut of, "{:?}", lit.value)?,
@@ -475,3 +476,28 @@ fn write_lit<F: FileLike>(mut of: FileLikeIndent<F>, lit: &syn::Lit) -> Result<(
 	Ok(())
 }
 
+fn write_string_lit<F: FileLike>(mut of: FileLikeIndent<F>, span: proc_macro2::Span, s: &str) -> Result<(), TransError> {
+	write!(&mut of, "{}", '"')?;
+	for c in s.chars() {
+		match c {
+			//'\''     => write!(&mut of, r#"\'"#)?,
+			'"'      => write!(&mut of, r#"\""#)?,
+			'\u{3F}' => write!(&mut of, "\\?")?,
+			'\\'     => write!(&mut of, r#"\\"#)?,
+			'\u{07}' => write!(&mut of, "\\a")?,
+			'\u{08}' => write!(&mut of, "\\b")?,
+			'\u{0C}' => write!(&mut of, "\\f")?,
+			'\n'     => write!(&mut of, "\\n")?,
+			'\r'     => write!(&mut of, "\\r")?,
+			'\t'     => write!(&mut of, "\\t")?,
+			'\u{0B}' => write!(&mut of, "\\v")?,
+			'\u{7F}' => write!(&mut of, "\\x7F")?,  // DEL
+			'\u{0}'  ..= '\u{1F}'  => write!(&mut of, "\\x{:02X}", c as u32)?,
+			'\u{20}' ..= '\u{7E}'  => write!(&mut of, "\\x{:02X}", c as u32)?,
+			// TODO: Handle strings correctly -- "abc" => u8"abc", and b"abc" => "abc"
+			_ => return Err(syn::Error::new(span, "non-ASCII string are not supported").into()),
+		}
+	}
+	write!(&mut of, "{}", '"')?;
+	Ok(())
+}

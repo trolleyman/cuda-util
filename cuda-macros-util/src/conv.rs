@@ -20,8 +20,8 @@ pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::E
 		Type::Ptr(ptr) => {
 			match (&ptr.mutability, &ptr.const_token) {
 				(Some(m), Some(c)) => Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
-				(None, Some(_)) => Ok(format!("{}*", rust_type_to_c(&ptr.elem)?).into()),
-				(Some(_), None) => Ok(format!("const {}*", rust_type_to_c(&ptr.elem)?).into()),
+				(None, Some(_)) => Ok(format!("const {}*", rust_type_to_c(&ptr.elem)?).into()),
+				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ptr.elem)?).into()),
 				(None, None) => Err(Some(syn::Error::new_spanned(ptr.clone(), "pointer must be mut or const"))),
 			}
 		},
