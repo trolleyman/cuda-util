@@ -493,7 +493,7 @@ fn write_string_lit<F: FileLike>(mut of: FileLikeIndent<F>, span: proc_macro2::S
 			'\u{0B}' => write!(&mut of, "\\v")?,
 			'\u{7F}' => write!(&mut of, "\\x7F")?,  // DEL
 			'\u{0}'  ..= '\u{1F}'  => write!(&mut of, "\\x{:02X}", c as u32)?,
-			'\u{20}' ..= '\u{7E}'  => write!(&mut of, "\\x{:02X}", c as u32)?,
+			'\u{20}' ..= '\u{7E}'  => write!(&mut of, "{}", c)?,
 			// TODO: Handle strings correctly -- "abc" => u8"abc", and b"abc" => "abc"
 			_ => return Err(syn::Error::new(span, "non-ASCII string are not supported").into()),
 		}
