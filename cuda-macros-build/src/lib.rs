@@ -72,6 +72,7 @@ fn is_cargo_cmd_valid() -> bool {
 
 pub fn build() {
 	if std::env::var_os("CUDA_MACROS_BUILD_SCRIPT").is_some() {
+		println!("cargo:rerun-if-env-changed=CUDA_MACROS_BUILD_TIMESTAMP");
 		// Detected recursion: exit
 		return;
 	}
@@ -133,6 +134,7 @@ pub fn build() {
 	}
 
 	// Compile crate & output sources
+	let unix_now = SystemTime::UNIX_EPOCH.elapsed().unwrap_or_default();
 	let mut command = Command::new(env!("CARGO"));
 	command.arg("check")
 		//.arg("--all-targets") // TODO: Figure out which targets to compile (--lib, --bins, --tests, --benches, --examples)
@@ -141,7 +143,8 @@ pub fn build() {
 		.arg("--target-dir")
 		.arg(target_dir)
 		.arg("--color=always")
-		.env("CUDA_MACROS_OUT_DIR", &out_dir);
+		.env("CUDA_MACROS_OUT_DIR", &out_dir)
+		.env("CUDA_MACROS_BUILD_TIMESTAMP", format!("{}.{}", unix_now.as_secs(), unix_now.subsec_nanos()));
 
 	let mut features = vec![];
 	for (key, _) in std::env::vars() {
