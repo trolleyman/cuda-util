@@ -105,7 +105,7 @@ pub fn build() {
 	}
 	fs::create_dir_all(&out_dir).unwrap();
 
-	// Check if we are RLS, not cargo
+	// Check if we are cargo & not rls
 	if !is_cargo_cmd_valid() {
 		return;
 	}
@@ -185,6 +185,9 @@ pub fn build() {
 			}
 		}
 	}
+	if files.len() == 0 {
+		panic!("aaa");
+	}
 
 	// Compile sources that were output at the previous step
 	// TODO: Fix msvc && nvcc
@@ -194,5 +197,10 @@ pub fn build() {
 		.include(&out_dir)
 		.files(&files)
 		.compile(&libname);
-	unimplemented!();
+}
+
+/// TODO: Add build options for -gencode option, etc.
+#[allow(dead_code)]
+struct BuildOptions {
+	_unused: u32,
 }

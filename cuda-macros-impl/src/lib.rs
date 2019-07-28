@@ -98,7 +98,7 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 	let args = quote!{ #(#args),* };
 
 	let fn_ident = f.ident.clone();
-	let fn_ident_c = format!("rust_cuda_macros_cwrapper_{}", fn_ident);
+	let fn_ident_c = format!("rust_cuda_macros_wrapper_{}", fn_ident);
 	let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
 
 	let vis = f.vis;
