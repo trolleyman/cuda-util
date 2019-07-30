@@ -21,7 +21,11 @@ cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros/cuda_10_1", "cuda-macros-build/cuda_
 
 [dependencies]
 cuda = "0.4.0-pre.2"
-cuda-macros = { path = ".." }
+cuda-macros = "0.1.0"
 
 [build-dependencies]
+cuda-macros-build = "0.1.0"
+
+[patch.crates-io]
+cuda-macros = { path = "../cuda-macros" }
 cuda-macros-build = { path = "../cuda-macros-build" }

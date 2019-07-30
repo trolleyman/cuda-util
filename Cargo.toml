@@ -5,4 +5,7 @@ authors = ["Callum Tolley <cgtrolley@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+cuda-macros = "0.1.0"
+
+[patch.crates-io]
 cuda-macros = { path = "./cuda-macros" }

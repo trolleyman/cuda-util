@@ -24,10 +24,14 @@ cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-util/cuda_10_0"]
 cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-util/cuda_10_1"]
 
 [dependencies]
-cuda-macros-util = { path = "../cuda-macros-util" }
+cuda-macros-util = "0.1.0"
+
 cuda = "0.4.0-pre.2"
 proc-macro2 = "0.4.30"
 syn = { version = "0.15.39", features = ["full", "extra-traits"] }
 quote = "0.6.13"
 fs2 = "0.4.3"
 lazy_static = "1.3.0"
+
+[patch.crates-io]
+cuda-macros-util = { path = "../cuda-macros-util" }
