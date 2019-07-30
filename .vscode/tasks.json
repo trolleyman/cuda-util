@@ -9,8 +9,8 @@
 			"command": "cargo",
 			"args": [
 				"build",
-				"--features",
-				"cuda_10_1"
+				"--features=cuda_10_1",
+				"--manifest-path=${workspaceFolder}/cuda-macros-test/Cargo.toml"
 			],
 			"options": {"cwd": "cuda-macros-test"},
 			"problemMatcher": ["$rustc"],
@@ -28,8 +28,8 @@
 			"command": "cargo",
 			"args": [
 				"test",
-				"--features",
-				"cuda_10_1"
+				"--features=cuda_10_1",
+				"--manifest-path=${workspaceFolder}/cuda-macros-test/Cargo.toml"
 			],
 			"options": {"cwd": "cuda-macros-test"},
 			"problemMatcher": ["$rustc"],
