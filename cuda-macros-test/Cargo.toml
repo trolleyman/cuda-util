@@ -21,7 +21,7 @@ cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros/cuda_10_1", "cuda-macros-build/cuda_
 
 [dependencies]
 cuda = "0.4.0-pre.2"
-cuda-macros = { path = ".." }
+cuda-macros = { path = "../cuda-macros" }
 
 [build-dependencies]
 cuda-macros-build = { path = "../cuda-macros-build" }

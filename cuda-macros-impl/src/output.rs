@@ -28,8 +28,8 @@ pub fn output_fn(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TokenStre
 fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransError> {
 	if let Some(dir) = CUDA_MACROS_OUT_DIR.clone() {
 		// Output to dir
-		let lock_path = dir.join("rust_cuda_macros_header.h.lock");
-		let header_path = dir.join("rust_cuda_macros_header.h");
+		let lock_path = dir.join(".lock");
+		let header_path = dir.join("header.h");
 		
 		// Get lock for header file
 		let lock = fs::OpenOptions::new().read(true).write(true).create(true).open(lock_path)?;
@@ -41,16 +41,17 @@ fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransErr
 		// Write to header file
 		util::write::write_fn_header_file(&mut header_file, f, fn_type)?;
 		header_file.sync_all()?;
-		lock.unlock()?;
-		drop(lock);
 		
 		// Open src file
-		let src_path = dir.join(format!("{}.cu", f.ident));
+		let src_path = dir.join("source.cu");
 		let mut src_file = fs::OpenOptions::new().read(true).write(true).create(true).open(src_path)?;
 
 		// Write to src file
-		util::write::write_fn_cu_file(&mut src_file, f, fn_type)?;
+		util::write::write_fn_source_file(&mut src_file, f, fn_type)?;
 		src_file.sync_all()?;
+
+		lock.unlock()?;
+		drop(lock);
 		Ok(())
 	} else {
 		// Null output to header file
@@ -59,7 +60,7 @@ fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransErr
 		
 		// Null output to src file
 		let mut src_file = io::Cursor::new(Vec::new());
-		util::write::write_fn_cu_file(&mut src_file, f, fn_type)?;
+		util::write::write_fn_source_file(&mut src_file, f, fn_type)?;
 		Ok(())
 	}
 }

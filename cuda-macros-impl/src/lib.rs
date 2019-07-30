@@ -55,6 +55,7 @@ fn process_device_fn(f: syn::ItemFn) -> TokenStream {
 		return ts;
 	}
 
+	/*
 	let ident = f.ident;
 	let vis = f.vis;
 
@@ -62,7 +63,8 @@ fn process_device_fn(f: syn::ItemFn) -> TokenStream {
 	// TODO: give a better compile time error somehow (maybe custom type?)
 	quote!{
 		#vis const #ident: () = ();
-	}
+	}*/
+	TokenStream::new()
 }
 
 fn process_global_fn(f: syn::ItemFn) -> TokenStream {
@@ -152,7 +154,7 @@ fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 
 	// Process functions with both #[device] & #[host]
 	let mut ts = TokenStream::new();
-	if device_host.is_some() && fn_type == Host {
+	if device_host.is_some() {
 		if fn_type == Host {
 			ts.extend(process_device_fn(f.clone()))
 		} else if fn_type == Device {

@@ -196,7 +196,7 @@ pub fn build() {
 	cc::Build::new()
 		.cuda(true)
 		.include(&out_dir)
-		.files(&files)
+		.file(&out_dir.join("source.cu"))
 		.compile(&libname);
 }
 
