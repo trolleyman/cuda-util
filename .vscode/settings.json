@@ -1,0 +1,3 @@
+{
+	"rust.features": ["cuda_10_1"]
+}

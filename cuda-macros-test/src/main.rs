@@ -8,7 +8,9 @@ unsafe fn hello(x: *mut i32, y: i32) {
 	*x = 2;
 }
 
-fn main() {
+
+#[test]
+fn test_hello() {
 	let x = cuda_alloc_device(std::mem::size_of::<i32>()).unwrap() as *mut i32;
 	let mut y = 0;
 	unsafe {

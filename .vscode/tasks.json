@@ -4,13 +4,37 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cargo",
-			"subcommand": "build",
-			"problemMatcher": [
-				"$rustc"
+			"label": "cargo: build",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"build",
+				"--features",
+				"cuda_10_1"
 			],
+			"options": {"cwd": "cuda-macros-test"},
+			"problemMatcher": ["$rustc"],
 			"group": {
 				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "cargo: test",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"test",
+				"--features",
+				"cuda_10_1"
+			],
+			"options": {"cwd": "cuda-macros-test"},
+			"problemMatcher": ["$rustc"],
+			"group": {
+				"kind": "test",
 				"isDefault": true
 			},
 			"presentation": {
