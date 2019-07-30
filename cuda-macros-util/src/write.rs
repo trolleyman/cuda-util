@@ -2,6 +2,7 @@
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::borrow::Cow;
+use std::fmt;
 
 use chrono::Local;
 
@@ -9,6 +10,7 @@ use super::{FunctionType, conv};
 use super::file::*;
 
 
+#[derive(Debug)]
 pub enum TransError {
 	IoError(io::Error),
 	SynError(syn::Error),
@@ -21,6 +23,22 @@ impl From<io::Error> for TransError {
 impl From<syn::Error> for TransError {
 	fn from(e: syn::Error) -> Self {
 		TransError::SynError(e)
+	}
+}
+impl fmt::Display for TransError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			TransError::IoError(e) => write!(f, "io error: {}", e),
+			TransError::SynError(e) => write!(f, "syntax error: {}", e),
+		}
+	}
+}
+impl std::error::Error for TransError {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			TransError::IoError(e) => Some(e),
+			TransError::SynError(e) => Some(e),
+		}
 	}
 }
 
