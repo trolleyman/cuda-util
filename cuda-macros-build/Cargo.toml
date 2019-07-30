@@ -10,7 +10,6 @@ features = ["cuda_10_1"]
 default-target = "x86_64-unknown-linux-gnu"
 
 [features]
-default = []
 #default = ["parallel"]
 parallel = ["cc/parallel"]
 # These aren't used directly, but are input into the `cargo check` command that is run.
