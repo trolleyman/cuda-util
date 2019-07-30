@@ -143,6 +143,7 @@ pub fn build() {
 		.arg("--target-dir")
 		.arg(target_dir)
 		.arg("--color=always")
+		.arg("--profile=test")
 		.env("CUDA_MACROS_OUT_DIR", &out_dir)
 		.env("CUDA_MACROS_BUILD_TIMESTAMP", format!("{}.{}", unix_now.as_secs(), unix_now.subsec_nanos()));
 
