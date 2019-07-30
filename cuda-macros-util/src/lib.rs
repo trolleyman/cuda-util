@@ -95,6 +95,8 @@ impl FunctionType {
 				return Some(ty);
 			} else if crate::type_path_matches(&path, &format!("::cuda_macros::{}", ty.attr())) {
 				return Some(ty);
+			} else if crate::type_path_matches(&path, &format!("::cuda_util::{}", ty.attr())) {
+				return Some(ty);
 			} else if crate::type_path_matches(&path, &format!("::cuda::{}", ty.attr())) {
 				return Some(ty);
 			}
@@ -161,5 +163,7 @@ mod tests {
 		assert_eq!(Some(Host), FunctionType::try_from_path(&syn::parse_str("cuda_macros::host").unwrap()));
 		assert_eq!(Some(Host), FunctionType::try_from_path(&syn::parse_str("::cuda_macros_impl::host").unwrap()));
 		assert_eq!(Some(Host), FunctionType::try_from_path(&syn::parse_str("cuda_macros_impl::host").unwrap()));
+		assert_eq!(Some(Host), FunctionType::try_from_path(&syn::parse_str("::cuda_util::host").unwrap()));
+		assert_eq!(Some(Host), FunctionType::try_from_path(&syn::parse_str("cuda_util::host").unwrap()));
 	}
 }
