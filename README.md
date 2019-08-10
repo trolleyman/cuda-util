@@ -7,10 +7,10 @@ These three attributes can be defined on a function to perform the same tasks
 as the `__global__`, `__device__` and `__host__` attributes perform on C functions.
 
 Attribute(s) | CPU callable | GPU callable | Runs on
-----------------------------------------------------
-`#[global]` | ✔️ | ✔️️️️️️ | GPU
-`#[device]` | ❌ | ️️️✔️️️️️️ | GPU
-`#[host]`   | ✔️ | ❌ | CPU
+-------------|--------------|--------------|--------
+`#[global]`  | ✔️ | ✔️️️️️️ | GPU |
+`#[device]`  | ❌ | ️️️✔️️️️️️ | GPU |
+`#[host]`    | ✔️ | ❌ | CPU |
 
 The `#[host]` and `#[device]` attributes can be combined, in which case two versions will be generated, one for the host and one for the device.
 The function will be run on whichever system it was called from.
