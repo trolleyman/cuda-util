@@ -109,7 +109,7 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 	let extern_c_fn = quote!{ extern "C" { #vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl) #ret; } };
 
 	let wrapper_fn = quote!{
-		unsafe #vis fn #fn_ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret {
+		#vis unsafe fn #fn_ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret {
 			let config = config.into();
 			#fn_ident_c(config, #args)
 		}

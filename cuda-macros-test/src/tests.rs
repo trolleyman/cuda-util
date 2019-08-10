@@ -135,3 +135,36 @@ fn test_add() {
 		assert_eq!(x + num, y);
 	}
 }
+
+#[cfg(windows)]
+mod inner {
+	use cuda_macros::global;
+	#[global]
+	pub unsafe fn global_get_platform(x: *mut i32) {
+		*x = 1;
+	}
+}
+#[cfg(not(windows))]
+mod inner {
+	use cuda_macros::global;
+	#[global]
+	pub unsafe fn global_get_platform(x: *mut i32) {
+		*x = 2;
+	}
+}
+
+#[test]
+fn test_cfg() {
+	let mut x = 0;
+	unsafe {
+		let x_device = cuda_alloc_device(std::mem::size_of::<i32>()).unwrap() as *mut i32;
+		cuda_memset(x_device as *mut u8, 0, std::mem::size_of::<i32>()).unwrap();
+		inner::global_get_platform((1, 1), x_device);
+		cuda_memcpy(&mut x, x_device, 1, CudaMemcpyKind::DeviceToHost).unwrap();
+		cuda_free_device(x_device as *mut u8).unwrap();
+	}
+	#[cfg(windows)]
+	assert_eq!(x, 1);
+	#[cfg(not(windows))]
+	assert_eq!(x, 2);
+}

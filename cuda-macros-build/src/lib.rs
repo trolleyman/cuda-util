@@ -167,41 +167,22 @@ pub fn build() {
 		.expect("failed to execute cargo check");
 
 	if !output.status.success() {
-		// Ignore
-		// io::stdout().lock().write_all(&output.stdout).ok();
-		// io::stderr().lock().write_all(&output.stderr).ok();
-		return;
+		// TODO: Ignore -- this should be fine, but might not due to bugs in implementation, as all errors that occur here
+		// should be picked up anyway in the actual pass that happens after the build phase.
+		//println!("cargo check failed");
+		io::stdout().lock().write_all(&output.stdout).ok();
+		io::stderr().lock().write_all(&output.stderr).ok();
+		panic!("Compilation error:");
 	}
 
 	// TODO: Test compile a CUDA file before main
 
-	// Get files
-	let mut files = vec![];
-	for entry in fs::read_dir(&out_dir).unwrap() {
-		let entry = entry.unwrap();
-		let p = entry.path();
-		if let Some(ext) = p.extension() {
-			if p.is_file() && ext == "cu" {
-				files.push(p);
-			}
-		}
-	}
-	if files.len() == 0 {
-		panic!("aaa");
-	}
-
 	// Compile sources that were output at the previous step
-	// TODO: Fix msvc && nvcc
+	// TODO: Hanlde -gencode arg
 	let libname = format!("cuda_macros_{}_{}", std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
 	cc::Build::new()
 		.cuda(true)
 		.include(&out_dir)
 		.file(&out_dir.join("source.cu"))
 		.compile(&libname);
-}
-
-/// TODO: Add build options for -gencode option, etc.
-#[allow(dead_code)]
-struct BuildOptions {
-	_unused: u32,
 }
