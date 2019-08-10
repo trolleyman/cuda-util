@@ -2,7 +2,7 @@
 # `cuda-util`
 Collection of utility methods & structs for working with the CUDA language.
 
-## `#[global]`, `#[device]` and `#[host]`
+#### `#[global]`, `#[device]` and `#[host]`
 These three attributes can be defined on a function to perform the same tasks
 as the `__global__`, `__device__` and `__host__` attributes perform on C functions.
 
