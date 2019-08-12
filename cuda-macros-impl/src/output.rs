@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use proc_macro2::TokenStream;
 use fs2::FileExt;
 
-use cuda_macros_util as util;
+use cuda_macros_common as util;
 use util::FunctionType;
 use util::write::TransError;
 

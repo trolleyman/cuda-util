@@ -1,5 +1,5 @@
 [package]
-name = "cuda-macros-util"
+name = "cuda-macros-common"
 version = "0.1.0"
 authors = ["Callum Tolley <cgtrolley@gmail.com>"]
 edition = "2018"

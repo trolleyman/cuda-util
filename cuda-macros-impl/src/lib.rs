@@ -1,5 +1,5 @@
 
-extern crate cuda_macros_util;
+extern crate cuda_macros_common;
 
 extern crate proc_macro;
 extern crate cuda;
@@ -16,7 +16,7 @@ use syn::parse_macro_input;
 use quote::{quote, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_util::{conv, FunctionType};
+use cuda_macros_common::{conv, FunctionType};
 
 
 fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
@@ -122,7 +122,7 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 }
 
 fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
-	use cuda_macros_util::FunctionType::*;
+	use cuda_macros_common::FunctionType::*;
 
 	let mut device_host = None;
 	for (i, a) in f.attrs.iter().enumerate() {

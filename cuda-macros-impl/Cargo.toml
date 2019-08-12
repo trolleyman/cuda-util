@@ -13,18 +13,18 @@ features = ["cuda_10_1"]
 default-target = "x86_64-unknown-linux-gnu"
 
 [features]
-cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros-util/cuda_6_5" ]
-cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros-util/cuda_7_0" ]
-cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros-util/cuda_7_5" ]
-cuda_8_0  = ["cuda/cuda_8_0" , "cuda-macros-util/cuda_8_0" ]
-cuda_9_0  = ["cuda/cuda_9_0" , "cuda-macros-util/cuda_9_0" ]
-cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros-util/cuda_9_1" ]
-cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros-util/cuda_9_2" ]
-cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-util/cuda_10_0"]
-cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-util/cuda_10_1"]
+cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros-common/cuda_6_5" ]
+cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros-common/cuda_7_0" ]
+cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros-common/cuda_7_5" ]
+cuda_8_0  = ["cuda/cuda_8_0" , "cuda-macros-common/cuda_8_0" ]
+cuda_9_0  = ["cuda/cuda_9_0" , "cuda-macros-common/cuda_9_0" ]
+cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros-common/cuda_9_1" ]
+cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros-common/cuda_9_2" ]
+cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros-common/cuda_10_0"]
+cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros-common/cuda_10_1"]
 
 [dependencies]
-cuda-macros-util = { path = "../cuda-macros-util" }
+cuda-macros-common = { path = "../cuda-macros-common" }
 cuda = "0.4.0-pre.2"
 proc-macro2 = "0.4.30"
 syn = { version = "0.15.39", features = ["full", "extra-traits"] }
