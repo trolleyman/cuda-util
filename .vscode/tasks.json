@@ -9,14 +9,12 @@
 			"command": "cargo",
 			"args": [
 				"build",
-				"--features=cuda_10_1",
-				"--manifest-path=${workspaceFolder}/cuda-macros-test/Cargo.toml"
+				"--features=cuda_10_1"
 			],
-			"options": {"cwd": "cuda-macros-test"},
 			"problemMatcher": ["$rustc"],
 			"group": {
+				"isDefault": true,
 				"kind": "build",
-				"isDefault": true
 			},
 			"presentation": {
 				"clear": true
@@ -28,6 +26,41 @@
 			"command": "cargo",
 			"args": [
 				"test",
+				"--features=cuda_10_1"
+			],
+			"problemMatcher": ["$rustc"],
+			"group": {
+				"isDefault": true,
+				"kind": "test",
+			},
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "build cuda-macros-test",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"build",
+				"--features=cuda_10_1",
+				"--manifest-path=${workspaceFolder}/cuda-macros-test/Cargo.toml"
+			],
+			"options": {"cwd": "cuda-macros-test"},
+			"problemMatcher": ["$rustc"],
+			"group": {
+				"kind": "build",
+			},
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "test cuda-macros-test",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"test",
 				"--features=cuda_10_1",
 				"--manifest-path=${workspaceFolder}/cuda-macros-test/Cargo.toml"
 			],
@@ -35,7 +68,6 @@
 			"problemMatcher": ["$rustc"],
 			"group": {
 				"kind": "test",
-				"isDefault": true
 			},
 			"presentation": {
 				"clear": true
