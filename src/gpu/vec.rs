@@ -232,8 +232,59 @@ impl<T: Copy> GpuSlice<T> {
 	pub fn as_mut_ptr(&mut self) -> *mut T {
 		self.0.as_mut_ptr()
 	}
-	
-	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below as_mut_ptr()
+
+	/// Swaps two elements in the slice.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::*;
+	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
+	/// v.swap(0, 1);
+	/// assert_eq!(v.to_vec(), &[2, 1, 3]);
+	/// ```
+	/// 
+	/// # Panics
+	/// - If there is a CUDA error while performing the operation.
+	/// - If `a` or `b` are out of bounds.
+	pub fn swap(&mut self, a: usize, b: usize) {
+		if a >= self.len() {
+			panic!("a is out of bounds");
+		}
+		if b >= self.len() {
+			panic!("b is out of bounds");
+		}
+		unsafe {
+			let a_ptr = self.as_mut_ptr().add(a);
+			let b_ptr = self.as_mut_ptr().add(b);
+			let tmp = cuda_alloc_device::<T>(1).expect("CUDA error");
+			cuda_memcpy(tmp, a_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+			cuda_memcpy(a_ptr, b_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+			cuda_memcpy(b_ptr, tmp, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+			cuda_free_device(tmp).expect("CUDA error");
+		}
+	}
+
+	/// Reverses the order of the slice.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::*;
+	/// let mut cpu_vec: Vec<u32> = (0..10_000).into_iter().collect();
+	/// let mut v = GpuVec::from(&cpu_vec[..]);
+	/// v.reverse();
+	/// cpu_vec.reverse();
+	/// assert_eq!(v.to_vec(), &cpu_vec);
+	/// ```
+	pub fn reverse(&mut self) {
+		// TODO
+	}
+	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below reverse()
+}
+impl<T: Copy> fmt::Debug for GpuSlice<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		write!(f, "GpuSlice([<{:p}>; {}])", self.as_ptr(), self.len())?;
+		Ok(())
+	}
 }
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
