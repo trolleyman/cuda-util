@@ -2,19 +2,22 @@
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::mem::{MaybeUninit, size_of};
+use std::fmt;
 
 use crate::rcuda::*;
 
 
-/// A mutable reference to a device location.
+/// Mutable reference to a device location
 /// 
-/// Values that are written to this are cahed until this is dropped, or the [flush()](#method.flush) is called.
-/// Then the value is written to the device address given.
+/// Values that are written to this are cached until this is dropped, or the [flush()](#method.flush) is called, at which point
+/// the value is written to the device
+#[derive(Debug)]
 pub struct GpuMutRef<'a, T: Copy> {
 	_phantom: PhantomData<&'a T>,
 	ptr: *mut T,
 	value: T,
 }
+unsafe impl<'a, T: Copy + Send> Send for GpuMutRef<'a, T> {}
 impl<'a, T: Copy> GpuMutRef<'a, T> {
 	/// Constructs a new `GpuMutRef<T>`.
 	/// 
@@ -58,6 +61,7 @@ impl<'a, T: Copy> DerefMut for GpuMutRef<'a, T> {
 	}
 }
 impl<'a, T: Copy> Drop for GpuMutRef<'a, T> {
+	/// Flushes the value to the device.
 	fn drop(&mut self) {
 		if self.ptr != std::ptr::null_mut() {
 			unsafe {
@@ -68,26 +72,60 @@ impl<'a, T: Copy> Drop for GpuMutRef<'a, T> {
 }
 
 
+/// Slice of [`GpuVec`](struct.GpuVec.html).
+/// 
+/// [`Unsize`](https://doc.rust-lang.org/std/marker/trait.Unsize.html)d type that can be only accessed via a reference (e.g. `&mut GpuSlice`).
+/// 
+/// Can be created by dereferencing a GpuVec, see [`GpuVec::deref()`](struct.GpuVec.html#method.deref).
 pub struct GpuSlice<T: Copy>([T]);
 impl<T: Copy> GpuSlice<T> {
+	/// Constructs an immutable GpuSlice from raw parts.
+	/// 
+	/// # Safety
+	/// `data` must point to a device buffer of at least size `len` that lives for at least lifetime `'a`.
 	pub unsafe fn from_raw_parts<'a>(data: *const T, len: usize) -> &'a Self {
 		std::mem::transmute(std::slice::from_raw_parts(data, len))
 	}
 
+	/// Constructs a mutable GpuSlice from raw parts.
+	/// 
+	/// # Safety
+	/// `data` must point to a device buffer of at least size `len` that lives for at least lifetime `'a`.
 	pub unsafe fn from_raw_parts_mut<'a>(data: *mut T, len: usize) -> &'a mut Self {
 		std::mem::transmute(std::slice::from_raw_parts_mut(data, len))
 	}
 
-	/// Copies the data in the `GpuVec` to the CPU and returns it as a `Vec`.
+	/// Copies the data in the slice to the CPU and returns it as a `Vec`.
 	/// 
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error.
+	/// If there is a CUDA error while performing the operation.
 	pub fn to_vec(&self) -> Vec<T> {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
 			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
+			v.set_len(self.len());
+		}
+		v
+	}
+
+	/// Copies the data in the slice to a new `GpuVec`.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::*;
+	/// let a = GpuVec::new(&[1, 2, 3, 4][..]);
+	/// let b: GpuVec<_> = &a[1..].to_gpu_vec();
+	/// assert_eq!(b.to_vec(), &[2, 3, 4]);
+	/// ```
+	/// 
+	/// # Panics
+	/// If there is a CUDA error while performing the operation.
+	pub fn to_gpu_vec(&self) -> GpuVec<T> {
+		let mut v = GpuVec::with_capacity(self.len());
+		unsafe {
+			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			v.set_len(self.len());
 		}
 		v
@@ -108,7 +146,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation
+	/// If there is a CUDA error while performing the operation.
 	pub fn first(&self) -> Option<T> {
 		if self.len() == 0 {
 			None
@@ -124,7 +162,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation
+	/// If there is a CUDA error while performing the operation.
 	pub fn first_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -142,7 +180,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation
+	/// If there is a CUDA error while performing the operation.
 	pub fn last(&self) -> Option<T> {
 		if self.len() == 0 {
 			None
@@ -158,7 +196,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation
+	/// If there is a CUDA error while performing the operation.
 	pub fn last_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -187,7 +225,8 @@ impl<T: Copy> GpuSlice<T> {
 	/// Returns a raw mutable pointer to the device buffer.
 	/// 
 	/// # Safety
-	/// Note that this is *not* a valid pointer. This is a device pointer, that points to data on the GPU. It can only be used in CUDA functions that explicitly mention a requirement for a device pointer.
+	/// Note that this is *not* a valid pointer. This is a device pointer, that points to data on the GPU.
+	/// It can only be used in CUDA functions that explicitly mention a requirement for a device pointer.
 	/// 
 	/// The caller is also responsible for the lifetime of the pointer.
 	pub fn as_mut_ptr(&mut self) -> *mut T {
@@ -196,7 +235,9 @@ impl<T: Copy> GpuSlice<T> {
 	
 	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below as_mut_ptr()
 }
+// TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
+/// Contiguous growable array type, similar to `Vec<T>` but stored on the GPU.
 #[derive(Debug)]
 pub struct GpuVec<T: Copy> {
 	_type: PhantomData<T>,
@@ -204,10 +245,10 @@ pub struct GpuVec<T: Copy> {
 	len: usize,
 	capacity: usize,
 }
-
 impl<T: Copy> GpuVec<T> {
+	/// Asserts that the capacity is less than or equal to [`isize::max_value()`](https://doc.rust-lang.org/nightly/std/primitive.isize.html#method.max_value).
 	fn assert_capacity_valid(capacity: usize) {
-		if capacity >= isize::max_value() as usize {
+		if capacity > isize::max_value() as usize {
 			panic!("invalid capacity");
 		}
 	}
@@ -241,7 +282,9 @@ impl<T: Copy> GpuVec<T> {
 	/// Creates a `GpuVec<T>` directly from the raw components of another vector.
 	/// 
 	/// # Safety
-	/// - `ptr` should be a valid CUDA device pointer, pointing to a memory buffer with a size of at least `capacity * size_of::<T>()` bytes.
+	/// `ptr` should be a valid CUDA device pointer, pointing to a memory buffer with a size of at least `capacity * size_of::<T>()` bytes.
+	/// 
+	/// `ptr` is freed when the `GpuVec` is dropped.
 	/// 
 	/// # Panics
 	/// If `len > capacity`
@@ -303,7 +346,7 @@ impl<T: Copy> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// See [try_reserve()](#method.try_reserve).
+	/// See [`try_reserve()`](#method.try_reserve).
 	/// - If `len + additional` overflows an `isize`.
 	pub fn reserve(&mut self, additional: usize) {
 		self.try_reserve(additional).expect("CUDA error")
@@ -317,7 +360,7 @@ impl<T: Copy> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// See [try_reserve_exact()](#method.try_reserve_exact).CudaMemcpyKind
+	/// See [`try_reserve_exact()`](#method.try_reserve_exact).
 	/// - If `len + additional` overflows an `isize`.
 	pub fn reserve_exact(&mut self, additional: usize) {
 		self.try_reserve_exact(additional).expect("CUDA error")
@@ -601,7 +644,12 @@ impl<T: Copy> DerefMut for GpuVec<T> {
 
 impl<T: Copy> Clone for GpuVec<T> {
 	fn clone(&self) -> Self {
-		unimplemented!()
+		unsafe {
+			let mut v = Self::with_capacity(self.len());
+			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+			v.set_len(self.len());
+			v
+		}
 	}
 }
 
@@ -610,3 +658,5 @@ impl<T: Copy> Drop for GpuVec<T> {
 		unsafe { cuda_free_device(self.ptr).ok() };
 	}
 }
+
+// TODO: Vec ops: https://doc.rust-lang.org/std/vec/struct.Vec.html

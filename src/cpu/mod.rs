@@ -3,6 +3,7 @@ use ndarray::prelude::*;
 use crate::*;
 
 
+/// `n`-dimensional vector (stored on the CPU) that can be easily moved between host and device
 #[derive(Debug, Clone)]
 pub struct CpuTensor<T: TensorElem, D: Dimension> {
 	inner: Array<T, D>

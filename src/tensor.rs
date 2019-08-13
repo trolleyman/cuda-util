@@ -3,15 +3,23 @@ use ndarray::Dimension;
 use crate::*;
 
 
+/// Set of operations that all `Tensor`s implement
 pub trait TensorTrait: Sized {
+	/// Element type (See [`TensorElem`](trait.TensorElem.html))
 	type Elem: TensorElem;
+	/// Dimension type (See [`Dimension`](https://docs.rs/ndarray/0.12.1/ndarray/trait.Dimension.html))
 	type Dim: Dimension;
+
+	/// Constructs the `Tensor` from an `ndarray` array
 	fn from_ndarray<S>(array: ndarray::ArrayBase::<S, Self::Dim>) -> Self where S: ndarray::Data<Elem=Self::Elem>;
 
+	/// Copy the `Tensor` to the CPU (host)
 	fn cpu(&self) -> CpuTensor<Self::Elem, Self::Dim>;
+	/// Copy the `Tensor` to the GPU (device)
 	fn gpu(&self) -> GpuTensor<Self::Elem, Self::Dim>;
 }
 
+/// `n`-dimensional vector that can be easily moved between host and device
 #[derive(Debug)]
 pub enum Tensor<T: TensorElem + 'static, D: Dimension> {
 	CpuTensor(CpuTensor<T, D>),

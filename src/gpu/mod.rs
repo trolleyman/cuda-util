@@ -12,6 +12,7 @@ pub use vec::*;
 // 	private_decl!();
 // }
 
+/// `n`-dimensional vector (stored on the GPU) that can be easily moved between host and device
 #[derive(Debug, Clone)]
 pub struct GpuTensor<T: TensorElem + 'static, D: Dimension> {
 	data: GpuVec<T>,
