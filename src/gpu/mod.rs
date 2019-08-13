@@ -13,7 +13,7 @@ pub use vec::*;
 // }
 
 #[derive(Debug, Clone)]
-pub struct GpuTensor<T: TensorElem, D: Dimension> {
+pub struct GpuTensor<T: TensorElem + 'static, D: Dimension> {
 	data: GpuVec<T>,
 	dim: D,
 	strides: D,
@@ -21,6 +21,10 @@ pub struct GpuTensor<T: TensorElem, D: Dimension> {
 impl<T: TensorElem, D: Dimension> TensorTrait for GpuTensor<T, D> {
 	type Elem = T;
 	type Dim = D;
+
+	fn from_ndarray<S>(_array: ndarray::ArrayBase::<S, D>) -> Self where S: ndarray::Data<Elem=T> {
+		unimplemented!()
+	}
 
 	fn cpu(&self) -> CpuTensor<T, D> {
 		unimplemented!()

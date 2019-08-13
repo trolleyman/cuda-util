@@ -4,7 +4,7 @@ extern crate ndarray;
 
 extern crate cuda_macros;
 
-mod private;
+mod rcuda;
 
 mod elem;
 mod tensor;

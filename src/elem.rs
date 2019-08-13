@@ -29,7 +29,7 @@ impl TensorElemType {
 	}
 }
 
-pub trait TensorElem: num::Num {
+pub trait TensorElem: num::Num + Copy {
 	fn cuda_type() -> TensorElemType;
 }
 

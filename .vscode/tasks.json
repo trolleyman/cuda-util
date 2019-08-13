@@ -48,9 +48,7 @@
 			],
 			"options": {"cwd": "cuda-macros-test"},
 			"problemMatcher": ["$rustc"],
-			"group": {
-				"kind": "build",
-			},
+			"group": "build",
 			"presentation": {
 				"clear": true
 			}
@@ -66,9 +64,7 @@
 			],
 			"options": {"cwd": "cuda-macros-test"},
 			"problemMatcher": ["$rustc"],
-			"group": {
-				"kind": "test",
-			},
+			"group": "test",
 			"presentation": {
 				"clear": true
 			}
