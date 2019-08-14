@@ -3,17 +3,21 @@ name = "cuda-util"
 version = "0.1.0"
 authors = ["Callum Tolley <cgtrolley@gmail.com>"]
 edition = "2018"
+build = "build.rs"
 
 [features]
-cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros/cuda_6_5" ]
-cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros/cuda_7_0" ]
-cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros/cuda_7_5" ]
-cuda_8_0  = ["cuda/cuda_8_0" , "cuda-macros/cuda_8_0" ]
-cuda_9_0  = ["cuda/cuda_9_0" , "cuda-macros/cuda_9_0" ]
-cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros/cuda_9_1" ]
-cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros/cuda_9_2" ]
-cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros/cuda_10_0"]
-cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros/cuda_10_1"]
+cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros/cuda_6_5" , "cuda-macros-build/cuda_6_5" ]
+cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros/cuda_7_0" , "cuda-macros-build/cuda_7_0" ]
+cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros/cuda_7_5" , "cuda-macros-build/cuda_7_5" ]
+cuda_8_0  = ["cuda/cuda_8_0" , "cuda-macros/cuda_8_0" , "cuda-macros-build/cuda_8_0" ]
+cuda_9_0  = ["cuda/cuda_9_0" , "cuda-macros/cuda_9_0" , "cuda-macros-build/cuda_9_0" ]
+cuda_9_1  = ["cuda/cuda_9_1" , "cuda-macros/cuda_9_1" , "cuda-macros-build/cuda_9_1" ]
+cuda_9_2  = ["cuda/cuda_9_2" , "cuda-macros/cuda_9_2" , "cuda-macros-build/cuda_9_2" ]
+cuda_10_0 = ["cuda/cuda_10_0", "cuda-macros/cuda_10_0", "cuda-macros-build/cuda_10_0"]
+cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros/cuda_10_1", "cuda-macros-build/cuda_10_1"]
+
+[build-dependencies]
+cuda-macros-build = { path = "./cuda-macros-build" }
 
 [dependencies]
 cuda-macros = { path = "./cuda-macros" }
