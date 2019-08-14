@@ -18,23 +18,18 @@ use quote::TokenStreamExt;
 use cuda_macros_common::{conv, FunctionType, FnInfo, CudaNumberType};
 
 
-fn process_host_fn(f: syn::ItemFn) -> TokenStream {
+fn process_host_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 	// Pass through
 	// TODO: handle cfg!(__CUDA_ARCH__)
 	// https://stackoverflow.com/questions/23899190/can-a-host-device-function-know-where-it-is-executing
 	// https://docs.nvidia.com/cuda/archive/9.0/cuda-c-programming-guide/index.html#host
-	quote!{ #f }
+	Ok(quote!{ #f })
 }
 
-fn process_device_fn(f: syn::ItemFn) -> TokenStream {
+fn process_device_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 	// Output function
-	let fn_info = match FnInfo::new(&f, FunctionType::Device) {
-		Ok(fn_info) => fn_info,
-		Err(e) => return e.to_compile_error(),
-	};
-	if let Err(ts) = output::output_fn(&f, &fn_info) {
-		return ts;
-	}
+	let fn_info = FnInfo::new(&f, FunctionType::Device).map_err(|e| e.to_compile_error())?;
+	output::output_fn(&f, &fn_info)?;
 
 	/*
 	let ident = f.ident;
@@ -45,13 +40,17 @@ fn process_device_fn(f: syn::ItemFn) -> TokenStream {
 	quote!{
 		#vis const #ident: () = ();
 	}*/
-	TokenStream::new()
+	Ok(TokenStream::new())
 }
 
 fn instantiate_generic_type(ty: &syn::Type, tys: &[(&str, CudaNumberType)]) -> syn::Type {
 	use syn::Type;
 
-	let path = cuda_macros_common::get_type_path(ty).expect("unexpected type");
+	let path = match cuda_macros_common::get_type_path(ty) {
+		Ok(p) => p,
+		// Ignore if type can't be converted into a type path
+		Err(_) => return ty.clone(),
+	};
 	for (gen_ty_name, gen_ty) in tys {
 		if path.is_ident(gen_ty_name) {
 			// Create type from `gen_ty.rust_type()`, i.e. `u64`, `f32`, etc.
@@ -103,21 +102,16 @@ fn instantiate_generic_args(args: &Punctuated<syn::FnArg, syn::token::Comma>, ty
 	}).collect()
 }
 
-fn process_global_fn(f: syn::ItemFn) -> TokenStream {
+fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 	// Output function
-	let fn_info = match FnInfo::new(&f, FunctionType::Global) {
-		Ok(fn_info) => fn_info,
-		Err(e) => return e.to_compile_error(),
-	};
-	if let Err(ts) = output::output_fn(&f, &fn_info) {
-		return ts;
-	}
+	let fn_info = FnInfo::new(&f, FunctionType::Global).map_err(|e| e.to_compile_error())?;
+	output::output_fn(&f, &fn_info)?;
 
 	// Create function wrapper & link to CUDA function
 	use syn::{FnArg, Pat};
 
 	if f.unsafety.is_none() {
-		return syn::Error::new_spanned(f, "#[global] functions are required to be marked as unsafe").to_compile_error();
+		return Err(syn::Error::new_spanned(f, "#[global] functions are required to be marked as unsafe").to_compile_error());
 	}
 
 	let args_decl = f.decl.inputs;
@@ -158,10 +152,10 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 			}
 		};
 
-		quote!{
+		Ok(quote!{
 			#extern_c_fn
 			#wrapper_fn
-		}
+		})
 	} else {
 		// Generics
 		let mut tokens = TokenStream::new();
@@ -179,6 +173,7 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 			let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
 			
 			// Instantiate generics in #args_decl
+			tys_extra.clear();
 			for (gen_ty_name, gen_ty) in fn_info.number_generics.iter().zip(tys.iter()) {
 				tys_extra.push((gen_ty_name.as_str(), *gen_ty));
 			}
@@ -214,14 +209,20 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 			}
 		};
 
-		quote!{
+		Ok(quote!{
 			#tokens
 			#wrapper_fn
-		}
+		})
 	}
 }
 
 fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
+	fn infallible_unwrap<T>(val: Result<T, T>) -> T {
+		match val {
+			Ok(t) => t,
+			Err(t) => t,
+		}
+	}
 	use cuda_macros_common::FunctionType::*;
 
 	let mut device_host = None;
@@ -251,28 +252,28 @@ fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 	let mut ts = TokenStream::new();
 	if device_host.is_some() {
 		if fn_type == Host {
-			ts.extend(process_device_fn(f.clone()))
+			ts.extend(infallible_unwrap(process_device_fn(f.clone())))
 		} else if fn_type == Device {
-			ts.extend(process_host_fn(f.clone()))
+			ts.extend(infallible_unwrap(process_host_fn(f.clone())))
 		}
 	}
 
 	match fn_type {
-		Host => ts.extend(process_host_fn(f)),
-		Device => ts.extend(process_device_fn(f)),
-		Global => ts.extend(process_global_fn(f)),
+		Host => ts.extend(infallible_unwrap(process_host_fn(f))),
+		Device => ts.extend(infallible_unwrap(process_device_fn(f))),
+		Global => ts.extend(infallible_unwrap(process_global_fn(f))),
 	}
 	ts
 }
 
-fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> TokenStream {
+fn process_all_fns_inner(item: syn::Item, fn_type: FunctionType, direct: bool) -> TokenStream {
 	match item {
 		syn::Item::Fn(f) => process_fn(f, fn_type),
 		syn::Item::Mod(m) => {
 			if let Some((_, items)) = m.content {
 				let mut tt = TokenStream::new();
 				for item in items {
-					tt.append_all(process_all_fns(item, fn_type, false))
+					tt.append_all(process_all_fns_inner(item, fn_type, false))
 				}
 				tt
 			} else {
@@ -300,6 +301,37 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 			}
 		}
 	}
+}
+
+fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> TokenStream {
+	use std::path::PathBuf;
+	use std::fs::OpenOptions;
+	use std::io::prelude::*;
+	
+	let out_path = std::env::var_os("CUDA_MACROS_OUT_DIR").map(|p| PathBuf::from(p).join("debug.rs"));
+	let from_ts = if out_path.is_some() {
+		let mut ts = TokenStream::new();
+		item.to_tokens(&mut ts);
+		Some(ts)
+	} else {
+		None
+	};
+
+	let ts = process_all_fns_inner(item, fn_type, direct);
+	
+	// Debug output
+	if let Some(p) = out_path {
+		if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(&p) {
+			writeln!(&mut f).ok();
+			writeln!(&mut f, "/* === FROM === */").ok();
+			writeln!(&mut f, "{}", &from_ts.unwrap()).ok();
+			writeln!(&mut f, "/* ==== TO ==== */").ok();
+			writeln!(&mut f, "{}", &ts).ok();
+			writeln!(&mut f, "/* ============ */").ok();
+		}
+	}
+
+	ts
 }
 
 
