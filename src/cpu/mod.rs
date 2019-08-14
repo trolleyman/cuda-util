@@ -5,10 +5,10 @@ use crate::*;
 
 /// `n`-dimensional vector (stored on the CPU) that can be easily moved between host and device
 #[derive(Debug, Clone)]
-pub struct CpuTensor<T: TensorElem, D: Dimension> {
+pub struct CpuTensor<T: CudaNumber, D: Dimension> {
 	inner: Array<T, D>
 }
-impl<T: TensorElem, D: Dimension> TensorTrait for CpuTensor<T, D> {
+impl<T: CudaNumber, D: Dimension> TensorTrait for CpuTensor<T, D> {
 	type Elem = T;
 	type Dim = D;
 	

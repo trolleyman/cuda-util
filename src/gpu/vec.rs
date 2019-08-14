@@ -5,6 +5,7 @@ use std::mem::{MaybeUninit, size_of};
 use std::fmt;
 
 use crate::rcuda::*;
+use super::func;
 
 
 /// Mutable reference to a device location
@@ -276,7 +277,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// assert_eq!(v.to_vec(), &cpu_vec);
 	/// ```
 	pub fn reverse(&mut self) {
-		// TODO
+		func::reverse_vector(self.as_mut_ptr(), self.len());
 	}
 	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below reverse()
 }

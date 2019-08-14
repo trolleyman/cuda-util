@@ -5,8 +5,8 @@ use crate::*;
 
 /// Set of operations that all `Tensor`s implement
 pub trait TensorTrait: Sized {
-	/// Element type (See [`TensorElem`](trait.TensorElem.html))
-	type Elem: TensorElem;
+	/// Element type (See [`CudaNumber`](trait.CudaNumber.html))
+	type Elem: CudaNumber;
 	/// Dimension type (See [`Dimension`](https://docs.rs/ndarray/0.12.1/ndarray/trait.Dimension.html))
 	type Dim: Dimension;
 
@@ -21,11 +21,11 @@ pub trait TensorTrait: Sized {
 
 /// `n`-dimensional vector that can be easily moved between host and device
 #[derive(Debug)]
-pub enum Tensor<T: TensorElem + 'static, D: Dimension> {
+pub enum Tensor<T: CudaNumber + 'static, D: Dimension> {
 	CpuTensor(CpuTensor<T, D>),
 	GpuTensor(GpuTensor<T, D>),
 }
-impl<T: TensorElem, D: Dimension> TensorTrait for Tensor<T, D> {
+impl<T: CudaNumber, D: Dimension> TensorTrait for Tensor<T, D> {
 	type Elem = T;
 	type Dim = D;
 

@@ -1,18 +1,19 @@
 
 use std::borrow::Cow;
 
-use super::FunctionType;
+use super::{FunctionType, FnInfo};
 use super::conv;
 
 
-const RUST_FIXED_NUM_TYPES: &'static [&'static str] = &["f32", "f64", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"];
-const C_FIXED_NUM_TYPES   : &'static [&'static str] = &["float", "double", "int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t", "int64_t", "uint64_t"];
+const RUST_FIXED_NUM_TYPES: &'static [&'static str] = &["f32", "f64", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "usize"];  // TODO: isize
+const C_FIXED_NUM_TYPES   : &'static [&'static str] = &["float", "double", "int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t", "int64_t", "uint64_t", "size_t"];
 const RUST_VAR_NUM_TYPES  : &'static [&'static str] = &["::std::os::raw::c_float", "::std::os::raw::c_double", "::std::os::raw::c_char", "::std::os::raw::c_schar", "::std::os::raw::c_uchar", "::std::os::raw::c_short", "::std::os::raw::c_ushort", "::std::os::raw::c_int", "::std::os::raw::c_uint", "::std::os::raw::c_long", "::std::os::raw::c_ulong", "::std::os::raw::c_longlong", "::std::os::raw::c_ulonglong"];
 const C_VAR_NUM_TYPES     : &'static [&'static str] = &["float", "double", "char", "signed char", "unsigned char", "short", "unsigned short", "int", "unsigned int", "long", "unsigned long", "long long", "unsigned long long"];
+const SHORTHAND_TYPES     : &'static [&'static str] = &["float", "double", "char", "schar", "uchar", "short", "ushort", "int", "uint", "long", "ulong", "longlong", "ulonglong"];
 
 
 /// Converts a Rust type into a C type
-pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::Error>> {
+pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	use syn::Type;
 
 	match &ty {
@@ -20,8 +21,8 @@ pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::E
 		Type::Ptr(ptr) => {
 			match (&ptr.mutability, &ptr.const_token) {
 				(Some(m), Some(c)) => Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
-				(None, Some(_)) => Ok(format!("const {}*", rust_type_to_c(&ptr.elem)?).into()),
-				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ptr.elem)?).into()),
+				(None, Some(_)) => Ok(format!("const {}*", rust_type_to_c(&ptr.elem, fn_info)?).into()),
+				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ptr.elem, fn_info)?).into()),
 				(None, None) => Err(Some(syn::Error::new_spanned(ptr.clone(), "pointer must be mut or const"))),
 			}
 		},
@@ -32,38 +33,55 @@ pub fn rust_type_to_c(ty: &syn::Type) -> Result<Cow<'static, str>, Option<syn::E
 			Ok("void".into())
 		},
 		Type::Tuple(_) => Err(None), // TODO: Auto-unpack & repack
-		Type::Path(path) => rust_type_path_to_c(&path),
-		Type::Paren(inner) => rust_type_to_c(&inner.elem),
-		Type::Group(inner) => rust_type_to_c(&inner.elem),
+		Type::Path(path) => rust_type_path_to_c(&path, fn_info),
+		Type::Paren(inner) => rust_type_to_c(&inner.elem, fn_info),
+		Type::Group(inner) => rust_type_to_c(&inner.elem, fn_info),
 		Type::Infer(inner) => Err(Some(syn::Error::new_spanned(inner.clone(), "inferred types are not supported")))
 	}
 }
 
 /// Converts a Rust type path into a C type
-pub fn rust_type_path_to_c(type_path: &syn::TypePath) -> Result<Cow<'static, str>, Option<syn::Error>> {
+pub fn rust_type_path_to_c(type_path: &syn::TypePath, fn_info: &FnInfo) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	if let Some(q) = &type_path.qself {
 		Err(Some(syn::Error::new_spanned(q.lt_token.clone(), "`<...>::type` style paths are not supported")))
 	} else {
-		rust_path_to_c(&type_path.path)
+		rust_path_to_c(&type_path.path, fn_info)
 	}
 }
 
 /// Converts a Rust path into a C type
-pub fn rust_path_to_c(path: &syn::Path) -> Result<Cow<'static, str>, Option<syn::Error>> {
-	// Check for number primitives
+pub fn rust_path_to_c(path: &syn::Path, fn_info: &FnInfo) -> Result<Cow<'static, str>, Option<syn::Error>> {
+	// Check for Rust number primitives
 	for (&rty, &cty) in RUST_FIXED_NUM_TYPES.iter().zip(C_FIXED_NUM_TYPES.iter()) {
 		if path.is_ident(rty) {
 			return Ok(cty.into());
 		}
 	}
+
+	// Check for shorthand primitive types (float, uint, int, longlong, etc.)
+	for (&sty, &cty) in SHORTHAND_TYPES.iter().zip(C_VAR_NUM_TYPES.iter()) {
+		if path.is_ident(sty) {
+			return Ok(cty.into());
+		}
+	}
+
 	// Check for ::std::os::raw::<c_num> types
 	for (&rty, &cty) in RUST_VAR_NUM_TYPES.iter().zip(C_VAR_NUM_TYPES.iter()) {
 		if super::type_path_matches(path, &rty) {
 			return Ok(cty.into());
 		}
 	}
+
+	// Check for void
 	if super::type_path_matches(path, "::std::ffi::c_void") || super::type_path_matches(path, "::core::ffi::c_void") {
 		return Ok("void".into())
+	}
+
+	// Check for generics
+	for generic_name in fn_info.number_generics.iter() {
+		if path.is_ident(generic_name) {
+			return Ok(generic_name.clone().into());
+		}
 	}
 	Err(None)
 }
@@ -71,7 +89,7 @@ pub fn rust_path_to_c(path: &syn::Path) -> Result<Cow<'static, str>, Option<syn:
 /// Converts a Rust function arg to a C arg
 /// 
 /// Returns `Ok(None)` when arg should be ignored
-pub fn rust_fn_arg_to_c(arg: &syn::FnArg) -> Result<Option<(Cow<'static, str>, syn::Ident)>, syn::Error> {
+pub fn rust_fn_arg_to_c(arg: &syn::FnArg, fn_info: &FnInfo) -> Result<Option<(Cow<'static, str>, syn::Ident)>, syn::Error> {
 	use syn::{FnArg, Pat};
 	match arg {
 		FnArg::SelfRef(arg) => Err(syn::Error::new_spanned(arg.clone(), "`self` is not allowed")),
@@ -82,7 +100,7 @@ pub fn rust_fn_arg_to_c(arg: &syn::FnArg) -> Result<Option<(Cow<'static, str>, s
 			match &arg.pat {
 				Pat::Wild(_) => Ok(None),
 				Pat::Ident(pat) if pat.by_ref.is_none() && pat.mutability.is_none() && pat.subpat.is_none() => {
-					match conv::rust_type_to_c(&arg.ty) {
+					match conv::rust_type_to_c(&arg.ty, fn_info) {
 						Ok(t) => Ok(Some((t, pat.ident.clone()))),
 						Err(Some(e)) => Err(e),
 						Err(None) => Err(syn::Error::new_spanned(arg.ty.clone(), "arguments of this type are not allowed")),

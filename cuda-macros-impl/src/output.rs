@@ -37,30 +37,24 @@ fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransErr
 		
 		// Open/create header file
 		let mut header_file = fs::OpenOptions::new().read(true).append(true).create(true).open(header_path)?;
-		
-		// Write to header file
-		util::write::write_fn_header_file(&mut header_file, f, fn_type)?;
-		header_file.sync_all()?;
-		
 		// Open src file
 		let src_path = dir.join("source.cu");
 		let mut src_file = fs::OpenOptions::new().read(true).write(true).create(true).open(src_path)?;
-
-		// Write to src file
-		util::write::write_fn_source_file(&mut src_file, f, fn_type)?;
+		
+		// Write function to files
+		util::write::write_fn(&mut header_file, &mut src_file, f, fn_type)?;
+		
+		header_file.sync_all()?;
 		src_file.sync_all()?;
 
 		lock.unlock()?;
 		drop(lock);
 		Ok(())
 	} else {
-		// Null output to header file
+		// Null output
 		let mut header_file = io::Cursor::new(Vec::new());
-		util::write::write_fn_header_file(&mut header_file, f, fn_type)?;
-		
-		// Null output to src file
 		let mut src_file = io::Cursor::new(Vec::new());
-		util::write::write_fn_source_file(&mut src_file, f, fn_type)?;
+		util::write::write_fn(&mut header_file, &mut src_file, f, fn_type)?;
 		Ok(())
 	}
 }

@@ -2,6 +2,7 @@
 use ndarray::prelude::*;
 use crate::*;
 
+pub mod func;
 mod vec;
 
 pub use vec::*;
@@ -14,12 +15,12 @@ pub use vec::*;
 
 /// `n`-dimensional vector (stored on the GPU) that can be easily moved between host and device
 #[derive(Debug, Clone)]
-pub struct GpuTensor<T: TensorElem + 'static, D: Dimension> {
+pub struct GpuTensor<T: CudaNumber + 'static, D: Dimension> {
 	data: GpuVec<T>,
 	dim: D,
 	strides: D,
 }
-impl<T: TensorElem, D: Dimension> TensorTrait for GpuTensor<T, D> {
+impl<T: CudaNumber, D: Dimension> TensorTrait for GpuTensor<T, D> {
 	type Elem = T;
 	type Dim = D;
 

@@ -5,6 +5,9 @@ extern crate syn;
 extern crate quote;
 extern crate chrono;
 
+use std::collections::{HashSet, HashMap};
+
+use syn::spanned::Spanned;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 
@@ -12,9 +15,148 @@ pub mod conv;
 pub mod write;
 pub mod file;
 mod execution_config;
+mod cuda_number;
 
 pub use execution_config::ExecutionConfig;
+pub use cuda_number::CudaNumber;
 
+
+#[derive(Clone, Debug)]
+pub struct FnInfo {
+	pub ty: FunctionType,
+	pub number_generics: HashSet<String>,
+}
+impl FnInfo {
+	/// Get information about the generics of a function, and report an error if invalid
+	pub fn new(f: &syn::ItemFn, fn_type: FunctionType) -> Result<FnInfo, syn::Error> {
+		use syn::{punctuated::Punctuated, token::Add, GenericParam, TypeParamBound, TraitBoundModifier, WherePredicate};
+
+		fn type_param_bound_is_cuda_number(bounds: &Punctuated<TypeParamBound, Add>) -> Result<bool, syn::Error> {
+			if bounds.len() == 0 {
+				Ok(false)
+			} else if bounds.len() > 1 {
+				Err(syn::Error::new_spanned(bounds, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+			} else {
+				match &bounds[0] {
+					TypeParamBound::Trait(bound) => {
+						if bound.modifier != TraitBoundModifier::None {
+							Err(syn::Error::new_spanned(bound.modifier, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+						} else if let Some(lts) = &bound.lifetimes {
+							Err(syn::Error::new_spanned(lts, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+						} else if type_path_matches(&bound.path, "::cuda_macros_common::CudaNumber") ||
+								type_path_matches(&bound.path, "::cuda_macros::CudaNumber") ||
+								type_path_matches(&bound.path, "::cuda_util::CudaNumber") {
+							Ok(true)
+						} else {
+							Err(syn::Error::new_spanned(&bound.path, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+						}
+					},
+					TypeParamBound::Lifetime(bound) => {
+						Err(syn::Error::new_spanned(bound, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+					}
+				}
+			}
+		}
+
+		let mut generics: HashMap<syn::Ident, (proc_macro2::Span, bool)> = HashMap::new();
+
+		// Get `T: CudaNumber` generics
+		for generic in &f.decl.generics.params {
+			match generic {
+				GenericParam::Type(generic) => {
+					if conv::is_item_enabled(&generic.attrs, conv::CfgType::DeviceCode)? {
+						if let Some(def) = &generic.default {
+							return Err(syn::Error::new_spanned(def, "default generic parameters not supported"));
+						}
+						generics.insert(generic.ident.clone(), (generic.span(), type_param_bound_is_cuda_number(&generic.bounds)?));
+					}
+				},
+				GenericParam::Lifetime(generic) => {
+					return Err(syn::Error::new_spanned(generic, "lifetime generic parameters not supported"));
+				},
+				GenericParam::Const(generic) => {
+					return Err(syn::Error::new_spanned(generic, "const generic parameters not supported"));
+				}
+			}
+		}
+		
+		fn get_type_path(ty: &syn::Type) -> Result<&syn::Path, syn::Error> {
+			use syn::Type;
+			match ty {
+				Type::Path(p) => {
+					if let Some(qself) = &p.qself {
+						Err(syn::Error::new_spanned(qself, "qself <_>:: type path not supported"))
+					} else {
+						Ok(&p.path)
+					}
+				},
+				Type::Paren(ty) => {
+					get_type_path(&ty.elem)
+				},
+				Type::Group(ty) => {
+					get_type_path(&ty.elem)
+				},
+				_ => {
+					Err(syn::Error::new_spanned(ty, "type not supported (only generic parameters of the form `T: CudaNumber` are supported)"))
+				}
+			}
+		}
+		
+		// Process where bounds
+		if let Some(whre) = &f.decl.generics.where_clause {
+			for predicate in &whre.predicates {
+				match predicate {
+					WherePredicate::Type(predicate) => {
+						if let Some(lts) = &predicate.lifetimes {
+							return Err(syn::Error::new_spanned(lts, "lifetimes on generic predicates not supported"));
+						}
+						if !type_param_bound_is_cuda_number(&predicate.bounds)? {
+							return Err(syn::Error::new_spanned(&predicate.bounds, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"));
+						}
+						let path = get_type_path(&predicate.bounded_ty)?;
+						let mut found = false;
+						for (gen_ident, (_, has_cuda_number_bound)) in generics.iter_mut() {
+							if path.is_ident(gen_ident.clone()) {
+								found = true;
+								*has_cuda_number_bound = true;
+								break;
+							}
+						}
+						if !found {
+							let mut generic_idents = vec![];
+							for gen_ident in generics.keys() {
+								generic_idents.push(gen_ident.to_string());
+							}
+							return Err(syn::Error::new_spanned(path, format!("unknown type path (must be one of {:?})", generic_idents)));
+						}
+					},
+					WherePredicate::Lifetime(predicate) => {
+						return Err(syn::Error::new_spanned(predicate, "lifetime generic predicates not supported"));
+					},
+					WherePredicate::Eq(predicate) => {
+						return Err(syn::Error::new_spanned(predicate, "equal generic predicates not supported"));
+					},
+				}
+			}
+		}
+		
+		// Check every generic has a cuda number bound
+		for (_, (span, has_cuda_number_bound)) in generics.iter() {
+			if !has_cuda_number_bound {
+				return Err(syn::Error::new(span.clone(), "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"));
+			}
+		}
+		
+		Ok(FnInfo {
+			ty: fn_type,
+			number_generics: generics.keys().map(|i| i.to_string()).collect(),
+		})
+	}
+
+	pub fn is_generic(&self) -> bool {
+		self.number_generics.len() > 0
+	}
+}
 
 pub fn tokens_join2(t1: impl ToTokens, t2: impl ToTokens) -> TokenStream {
 	let mut t = TokenStream::new();

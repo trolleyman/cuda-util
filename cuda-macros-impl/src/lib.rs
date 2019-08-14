@@ -19,28 +19,6 @@ use quote::TokenStreamExt;
 use cuda_macros_common::{conv, FunctionType};
 
 
-fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
-	if let Some(item) = &f.constness {
-		return Err(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed"));
-	}
-	if let Some(item) = &f.asyncness {
-		return Err(syn::Error::new_spanned(item.clone(), "async CUDA functions are not allowed"));
-	}
-	if let Some(item) = &f.abi {
-		return Err(syn::Error::new_spanned(item.clone(), "non-default ABIs on CUDA functions are not allowed"));
-	}
-	if let Some(item) = &f.decl.variadic {
-		return Err(syn::Error::new_spanned(item.clone(), "varadic CUDA functions are not allowed"));
-	}
-	if f.decl.generics.params.len() != 0 {
-		return Err(syn::Error::new_spanned(f.decl.generics.params.clone(), "generic CUDA functions are not allowed"));
-	}
-	if let Some(item) = &f.decl.generics.where_clause {
-		return Err(syn::Error::new_spanned(item.clone(), "generic CUDA functions are not allowed"));
-	}
-	Ok(())
-}
-
 fn process_host_fn(f: syn::ItemFn) -> TokenStream {
 	// Pass through
 	// TODO: handle cfg!(__CUDA_ARCH__)
@@ -145,11 +123,6 @@ fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 		Ok(true) => {},
 		Ok(false) => return TokenStream::new(), // Skip function
 		Err(e) => return e.to_compile_error(),
-	}
-
-	// Check function signatures
-	if let Err(e) = check_function_signature(&f) {
-		return e.to_compile_error();
 	}
 
 	// Process functions with both #[device] & #[host]
