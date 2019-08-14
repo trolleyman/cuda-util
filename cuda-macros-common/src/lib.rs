@@ -163,7 +163,7 @@ pub fn get_type_path(ty: &syn::Type) -> Result<&syn::Path, syn::Error> {
 			get_type_path(&ty.elem)
 		},
 		_ => {
-			Err(syn::Error::new_spanned(ty, "type not supported (only generic parameters of the form `T: CudaNumber` are supported)"))
+			Err(syn::Error::new_spanned(ty, "type is not a type path"))
 		}
 	}
 }
