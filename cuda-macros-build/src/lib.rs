@@ -143,7 +143,7 @@ pub fn build() {
 		.arg("--target-dir")
 		.arg(target_dir)
 		.arg("--color=always")
-		.arg("--profile=test")
+		.arg("--profile=test")  // check #[cfg(test)] parts of the program as well
 		.env("CUDA_MACROS_OUT_DIR", &out_dir)
 		.env("CUDA_MACROS_BUILD_TIMESTAMP", format!("{}.{}", unix_now.as_secs(), unix_now.subsec_nanos()));
 
@@ -159,6 +159,10 @@ pub fn build() {
 			}
 		}
 	}
+	if features.len() > 0 {
+		command.arg("--features");
+		command.arg(features.join(" "));
+	}
 
 	if std::env::var("PROFILE").unwrap() == "release" {
 		command.arg("--release");
@@ -172,7 +176,8 @@ pub fn build() {
 		//println!("cargo check failed");
 		io::stdout().lock().write_all(&output.stdout).ok();
 		io::stderr().lock().write_all(&output.stderr).ok();
-		panic!("Compilation error:");
+		std::env::set_var("RUST_BACKTRACE", "0");
+		panic!("compilation error");
 	}
 
 	// TODO: Test compile a CUDA file before main
