@@ -409,8 +409,18 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 		},
 		Expr::Type(e) => Err(syn::Error::new_spanned(e.clone(), "type ascription is not supported"))?,
 		Expr::Let(e) => Err(syn::Error::new_spanned(e.clone(), "let guards are not supported"))?,
-		Expr::If(_e) => {
-			unimplemented!("Expr::If"); // TODO
+		Expr::If(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				write!(&mut of, "if (")?;
+				write_expr(of.incr(), fn_info, &e.cond)?;
+				writeln!(&mut of, ") {{")?;
+				write_stmts(of.incr(), fn_info, &e.then_branch.stmts, false)?;
+				if let Some((_, else_branch)) = &e.else_branch {
+					writeln!(&mut of, "}} else {{")?;
+					write_expr(of.incr(), fn_info, &else_branch)?;
+				}
+				writeln!(&mut of, "}}")?;
+			}
 		},
 		Expr::While(_e) => {
 			unimplemented!("Expr::While"); // TODO
