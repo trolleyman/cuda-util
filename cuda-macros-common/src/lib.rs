@@ -5,8 +5,6 @@ extern crate syn;
 extern crate quote;
 extern crate chrono;
 
-use std::collections::{HashSet, HashMap};
-
 use syn::spanned::Spanned;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
@@ -14,17 +12,20 @@ use quote::ToTokens;
 pub mod conv;
 pub mod write;
 pub mod file;
+mod perms;
 mod execution_config;
 mod cuda_number;
 
+pub use perms::*;
 pub use execution_config::ExecutionConfig;
-pub use cuda_number::CudaNumber;
+pub use cuda_number::{CudaNumber, CudaNumberType};
 
 
 #[derive(Clone, Debug)]
 pub struct FnInfo {
 	pub ty: FunctionType,
-	pub number_generics: HashSet<String>,
+	pub number_generics: Vec<String>,
+	pub c_template_decl: String,
 }
 impl FnInfo {
 	/// Get information about the generics of a function, and report an error if invalid
@@ -58,7 +59,7 @@ impl FnInfo {
 			}
 		}
 
-		let mut generics: HashMap<syn::Ident, (proc_macro2::Span, bool)> = HashMap::new();
+		let mut generics: Vec<(syn::Ident, proc_macro2::Span, bool)> = Vec::new();
 
 		// Get `T: CudaNumber` generics
 		for generic in &f.decl.generics.params {
@@ -68,7 +69,10 @@ impl FnInfo {
 						if let Some(def) = &generic.default {
 							return Err(syn::Error::new_spanned(def, "default generic parameters not supported"));
 						}
-						generics.insert(generic.ident.clone(), (generic.span(), type_param_bound_is_cuda_number(&generic.bounds)?));
+						if generics.iter().find(|(ident, _, _)| *ident == generic.ident).is_some() {
+							return Err(syn::Error::new_spanned(&generic.ident, "generic already declared"));
+						}
+						generics.push((generic.ident.clone(), generic.span(), type_param_bound_is_cuda_number(&generic.bounds)?));
 					}
 				},
 				GenericParam::Lifetime(generic) => {
@@ -76,28 +80,6 @@ impl FnInfo {
 				},
 				GenericParam::Const(generic) => {
 					return Err(syn::Error::new_spanned(generic, "const generic parameters not supported"));
-				}
-			}
-		}
-		
-		fn get_type_path(ty: &syn::Type) -> Result<&syn::Path, syn::Error> {
-			use syn::Type;
-			match ty {
-				Type::Path(p) => {
-					if let Some(qself) = &p.qself {
-						Err(syn::Error::new_spanned(qself, "qself <_>:: type path not supported"))
-					} else {
-						Ok(&p.path)
-					}
-				},
-				Type::Paren(ty) => {
-					get_type_path(&ty.elem)
-				},
-				Type::Group(ty) => {
-					get_type_path(&ty.elem)
-				},
-				_ => {
-					Err(syn::Error::new_spanned(ty, "type not supported (only generic parameters of the form `T: CudaNumber` are supported)"))
 				}
 			}
 		}
@@ -115,7 +97,7 @@ impl FnInfo {
 						}
 						let path = get_type_path(&predicate.bounded_ty)?;
 						let mut found = false;
-						for (gen_ident, (_, has_cuda_number_bound)) in generics.iter_mut() {
+						for (gen_ident, _, has_cuda_number_bound) in generics.iter_mut() {
 							if path.is_ident(gen_ident.clone()) {
 								found = true;
 								*has_cuda_number_bound = true;
@@ -124,7 +106,7 @@ impl FnInfo {
 						}
 						if !found {
 							let mut generic_idents = vec![];
-							for gen_ident in generics.keys() {
+							for (gen_ident, _, _) in generics.iter() {
 								generic_idents.push(gen_ident.to_string());
 							}
 							return Err(syn::Error::new_spanned(path, format!("unknown type path (must be one of {:?})", generic_idents)));
@@ -141,20 +123,48 @@ impl FnInfo {
 		}
 		
 		// Check every generic has a cuda number bound
-		for (_, (span, has_cuda_number_bound)) in generics.iter() {
+		for (_, span, has_cuda_number_bound) in generics.iter() {
 			if !has_cuda_number_bound {
 				return Err(syn::Error::new(span.clone(), "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"));
 			}
 		}
 		
+		let number_generics: Vec<String> = generics.iter().map(|(i, _, _)| i.to_string()).collect();
+		let type_args = number_generics.iter().map(|ty| format!("typename {}", ty)).collect::<Vec<String>>().join(", ");
+		let c_template_decl = format!("template<{}>", type_args);
+		
 		Ok(FnInfo {
 			ty: fn_type,
-			number_generics: generics.keys().map(|i| i.to_string()).collect(),
+			number_generics,
+			c_template_decl,
 		})
 	}
 
 	pub fn is_generic(&self) -> bool {
 		self.number_generics.len() > 0
+	}
+}
+
+/// Try to get a type path from a type. If the type is not a type path, then return an error.
+pub fn get_type_path(ty: &syn::Type) -> Result<&syn::Path, syn::Error> {
+	use syn::Type;
+	match ty {
+		Type::Path(p) => {
+			if let Some(_) = &p.qself {
+				Err(syn::Error::new_spanned(p, "qself <_>:: type path not supported"))
+			} else {
+				Ok(&p.path)
+			}
+		},
+		Type::Paren(ty) => {
+			get_type_path(&ty.elem)
+		},
+		Type::Group(ty) => {
+			get_type_path(&ty.elem)
+		},
+		_ => {
+			Err(syn::Error::new_spanned(ty, "type not supported (only generic parameters of the form `T: CudaNumber` are supported)"))
+		}
 	}
 }
 

@@ -8,7 +8,7 @@ use proc_macro2::TokenStream;
 use fs2::FileExt;
 
 use cuda_macros_common as util;
-use util::FunctionType;
+use util::FnInfo;
 use util::write::TransError;
 
 
@@ -17,15 +17,15 @@ lazy_static!{
 }
 
 
-pub fn output_fn(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TokenStream> {
-	match output_fn_impl(f, fn_type) {
+pub fn output_fn(f: &syn::ItemFn, fn_info: &FnInfo) -> Result<(), TokenStream> {
+	match output_fn_impl(f, fn_info) {
 		Ok(()) => Ok(()),
 		Err(TransError::IoError(e)) => Err(syn::Error::new_spanned(f.clone(), format!("failed to write function: {:?}", e)).to_compile_error()),
 		Err(TransError::SynError(e)) => Err(e.to_compile_error())
 	}
 }
 
-fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransError> {
+fn output_fn_impl(f: &syn::ItemFn, fn_info: &FnInfo) -> Result<(), TransError> {
 	if let Some(dir) = CUDA_MACROS_OUT_DIR.clone() {
 		// Output to dir
 		let lock_path = dir.join(".lock");
@@ -42,7 +42,7 @@ fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransErr
 		let mut src_file = fs::OpenOptions::new().read(true).write(true).create(true).open(src_path)?;
 		
 		// Write function to files
-		util::write::write_fn(&mut header_file, &mut src_file, f, fn_type)?;
+		util::write::write_fn(&mut header_file, &mut src_file, f, fn_info)?;
 		
 		header_file.sync_all()?;
 		src_file.sync_all()?;
@@ -54,7 +54,7 @@ fn output_fn_impl(f: &syn::ItemFn, fn_type: FunctionType) -> Result<(), TransErr
 		// Null output
 		let mut header_file = io::Cursor::new(Vec::new());
 		let mut src_file = io::Cursor::new(Vec::new());
-		util::write::write_fn(&mut header_file, &mut src_file, f, fn_type)?;
+		util::write::write_fn(&mut header_file, &mut src_file, f, fn_info)?;
 		Ok(())
 	}
 }

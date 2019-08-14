@@ -10,13 +10,12 @@ extern crate fs2;
 
 mod output;
 
-
 use proc_macro2::TokenStream;
-use syn::parse_macro_input;
+use syn::{parse_macro_input, spanned::Spanned, punctuated::Punctuated};
 use quote::{quote, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_common::{conv, FunctionType};
+use cuda_macros_common::{conv, FunctionType, FnInfo, CudaNumberType};
 
 
 fn process_host_fn(f: syn::ItemFn) -> TokenStream {
@@ -29,7 +28,11 @@ fn process_host_fn(f: syn::ItemFn) -> TokenStream {
 
 fn process_device_fn(f: syn::ItemFn) -> TokenStream {
 	// Output function
-	if let Err(ts) = output::output_fn(&f, FunctionType::Device) {
+	let fn_info = match FnInfo::new(&f, FunctionType::Device) {
+		Ok(fn_info) => fn_info,
+		Err(e) => return e.to_compile_error(),
+	};
+	if let Err(ts) = output::output_fn(&f, &fn_info) {
 		return ts;
 	}
 
@@ -45,9 +48,68 @@ fn process_device_fn(f: syn::ItemFn) -> TokenStream {
 	TokenStream::new()
 }
 
+fn instantiate_generic_type(ty: &syn::Type, tys: &[(&str, CudaNumberType)]) -> syn::Type {
+	use syn::Type;
+
+	let path = cuda_macros_common::get_type_path(ty).expect("unexpected type");
+	for (gen_ty_name, gen_ty) in tys {
+		if path.is_ident(gen_ty_name) {
+			// Create type from `gen_ty.rust_type()`, i.e. `u64`, `f32`, etc.
+			let mut path_segments = Punctuated::new();
+			path_segments.push_value(syn::PathSegment {
+				ident: syn::Ident::new(gen_ty.rust_name(), ty.span()),
+				arguments: syn::PathArguments::None
+			});
+			return Type::Path(syn::TypePath {
+				qself: None,
+				path: syn::Path {
+					leading_colon: None,
+					segments: path_segments
+				}
+			});
+		}
+	}
+	ty.clone()
+}
+
+fn instantiate_generic_arg(arg: &syn::FnArg, tys: &[(&str, CudaNumberType)]) -> syn::FnArg {
+	use syn::FnArg;
+
+	match arg {
+		FnArg::SelfRef(_) | FnArg::SelfValue(_) | FnArg::Inferred(_) => arg.clone(),
+		FnArg::Captured(arg) => {
+			FnArg::Captured(syn::ArgCaptured {
+				pat: arg.pat.clone(),
+				colon_token: arg.colon_token.clone(),
+				ty: instantiate_generic_type(&arg.ty, tys)
+			})
+		},
+		FnArg::Ignored(ty) => {
+			FnArg::Ignored(instantiate_generic_type(ty, tys))
+		}
+	}
+}
+
+fn instantiate_generic_args(args: &Punctuated<syn::FnArg, syn::token::Comma>, tys: &[(&str, CudaNumberType)]) -> Punctuated<syn::FnArg, syn::token::Comma> {
+	use syn::punctuated::Pair;
+
+	args.pairs().map(|pair| match pair {
+		Pair::Punctuated(arg, p) => {
+			Pair::Punctuated(instantiate_generic_arg(arg, tys), p.clone())
+		},
+		Pair::End(arg) => {
+			Pair::End(instantiate_generic_arg(arg, tys))
+		}
+	}).collect()
+}
+
 fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 	// Output function
-	if let Err(ts) = output::output_fn(&f, FunctionType::Global) {
+	let fn_info = match FnInfo::new(&f, FunctionType::Global) {
+		Ok(fn_info) => fn_info,
+		Err(e) => return e.to_compile_error(),
+	};
+	if let Err(ts) = output::output_fn(&f, &fn_info) {
 		return ts;
 	}
 
@@ -77,25 +139,85 @@ fn process_global_fn(f: syn::ItemFn) -> TokenStream {
 
 	let args = quote!{ #(#args),* };
 
-	let fn_ident = f.ident.clone();
-	let fn_ident_c = format!("rust_cuda_macros_wrapper_{}", fn_ident);
-	let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
-
 	let vis = f.vis;
 	let ret = f.decl.output;
+	let generics_params = f.decl.generics.params;
 
-	let extern_c_fn = quote!{ extern "C" { #vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl) #ret; } };
+	let fn_ident = f.ident.clone();
+	let fn_ident_c_base = format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), fn_ident);
 
-	let wrapper_fn = quote!{
-		#vis unsafe fn #fn_ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret {
-			let config = config.into();
-			#fn_ident_c(config, #args)
+	if !fn_info.is_generic() {
+		let fn_ident_c = syn::Ident::new(&fn_ident_c_base, fn_ident.span());
+
+		let extern_c_fn = quote!{ extern "C" { #vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl) #ret; } };
+
+		let wrapper_fn = quote!{
+			#vis unsafe fn #fn_ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret {
+				let config = config.into();
+				#fn_ident_c(config, #args)
+			}
+		};
+
+		quote!{
+			#extern_c_fn
+			#wrapper_fn
 		}
-	};
+	} else {
+		// Generics
+		let mut tokens = TokenStream::new();
+		let mut fn_ident_c = String::with_capacity(fn_ident_c_base.len());
+		let mut tys_extra = vec![];
+		cuda_macros_common::permutations(CudaNumberType::types(), fn_info.number_generics.len(), |tys| {
+			// Get correct ident name (e.g. compare_f32_u32 is from compare<T: CudaNumber, U: CudaNumber>(x: T, y: T) with f32 and u32 type args)
+			fn_ident_c.clone_from(&fn_ident_c_base);
+			for (i, ty) in tys.iter().enumerate() {
+				fn_ident_c.push_str(ty.rust_name());
+				if i != tys.len() {
+					fn_ident_c.push_str("_");
+				}
+			}
+			let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
+			
+			// Instantiate generics in #args_decl
+			for (gen_ty_name, gen_ty) in fn_info.number_generics.iter().zip(tys.iter()) {
+				tys_extra.push((gen_ty_name.as_str(), *gen_ty));
+			}
+			let args_decl_instantiated = instantiate_generic_args(&args_decl, &tys_extra[..]);
+			tokens.extend(quote!{ extern "C" { #vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl_instantiated) #ret; } });
+		});
 
-	quote!{
-		#extern_c_fn
-		#wrapper_fn
+		// <T: CudaNumber, etc.>
+		let mut generics = TokenStream::new();
+		if let Some(lt_token) = &f.decl.generics.lt_token {
+			generics.extend(quote!{ #lt_token });
+		} else {
+			generics.extend(quote!{ < });
+		}
+		generics.extend(quote!{ #generics_params });
+		if let Some(gt_token) = &f.decl.generics.lt_token {
+			generics.extend(quote!{ #gt_token });
+		} else {
+			generics.extend(quote!{ > });
+		}
+
+		// where T: CudaNumber
+		let mut where_clause = TokenStream::new();
+		if let Some(clause) = f.decl.generics.where_clause {
+			where_clause.extend(quote!{ #clause });
+		}
+
+		let wrapper_fn = quote!{
+			#vis unsafe fn #fn_ident#generics(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret #where_clause {
+				let config = config.into();
+				// TODO
+				#fn_ident_c(config, #args)
+			}
+		};
+
+		quote!{
+			#tokens
+			#wrapper_fn
+		}
 	}
 }
 
