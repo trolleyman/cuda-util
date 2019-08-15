@@ -270,11 +270,11 @@ impl<T: Copy> GpuSlice<T> {
 	/// # Examples
 	/// ```
 	/// # use cuda_util::*;
-	/// let mut cpu_vec: Vec<u32> = (0..10_000).into_iter().collect();
+	/// let mut cpu_vec: Vec<u32> = (0..2000).into_iter().collect();
 	/// let mut v = GpuVec::from(&cpu_vec[..]);
 	/// v.reverse();
 	/// cpu_vec.reverse();
-	/// assert_eq!(v.to_vec(), &cpu_vec);
+	/// assert_eq!(&v.to_vec(), &cpu_vec);
 	/// ```
 	pub fn reverse(&mut self) {
 		func::reverse_vector(self.as_mut_ptr(), self.len());
