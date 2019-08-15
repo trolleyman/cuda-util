@@ -172,7 +172,7 @@ fn write_fn_source_file<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnIn
 fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_wrapper: bool, generic_tys: Option<&[CudaNumberType]>) -> Result<(), TransError> {
 	let ret: Cow<'static, str> = match &f.decl.output {
 		syn::ReturnType::Default => "void".into(),
-		syn::ReturnType::Type(_, ty) => conv::rust_type_to_c(&ty, fn_info)
+		syn::ReturnType::Type(_, ty) => conv::rust_type_to_c(&ty, fn_info, false)
 			.map_err(|e| e.unwrap_or_else(|| syn::Error::new_spanned(ty, "invalid return type")))?,
 	};
 	if fn_info.ty == FunctionType::Global && ret != "void" {
@@ -240,23 +240,28 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnI
 }
 
 fn write_cuda_fn_body<F: FileLike>(of: &mut F, fn_info: &FnInfo, stmts: &[syn::Stmt]) -> Result<(), TransError> {
-	write_stmts(FileLikeIndent::new(of, 1), fn_info, stmts, true)
+	write_stmts(FileLikeIndent::new(of, 1), fn_info, stmts)
 }
 
-fn write_stmts<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmts: &[syn::Stmt], allow_missing_semicolon: bool) -> Result<(), TransError> {
-	for (i, stmt) in stmts.iter().enumerate() {
-		write_stmt(of.clone(), fn_info, stmt, allow_missing_semicolon && i == stmts.len() - 1)?;
+fn write_stmts<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmts: &[syn::Stmt]) -> Result<(), TransError> {
+	for stmt in stmts.iter() {
+		write_stmt(of.clone(), fn_info, stmt)?;
 	}
 	Ok(())
 }
 
-fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &syn::Stmt, missing_semicolon_is_return: bool) -> Result<(), TransError> {
+fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &syn::Stmt) -> Result<(), TransError> {
 	use syn::{Pat, Stmt};
 
 	match stmt {
 		Stmt::Local(local) => {
-			let enabled = conv::is_item_enabled(&local.attrs, conv::CfgType::DeviceCode)?;
-			if enabled {
+			if conv::is_item_enabled(&local.attrs, conv::CfgType::DeviceCode)? {
+				let mut is_shared = false;
+				for attr in &local.attrs {
+					if attr.path.is_ident("shared") {
+						is_shared = true;
+					}
+				}
 				if local.pats.len() != 1 {
 					Err(syn::Error::new_spanned(local.pats.clone(), "invalid pattern: only simple identifier allowed"))?;
 				}
@@ -271,14 +276,19 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &s
 					return Err(syn::Error::new_spanned(local.clone(), "inferred types are not supported").into());
 				}
 				let ty = &local.ty.as_ref().unwrap();
-				let cty = conv::rust_type_to_c(&ty.1, fn_info)
-					.map_err(|e| e.unwrap_or(syn::Error::new_spanned(ty.1.clone(), "invalid type")))?;
-				write!(&mut of, "{} ", cty)?;
-				if !mutability {
-					write!(&mut of, "const ")?;
-				}
+				let (cty_prefix, cty_postfix) = if is_shared {
+					conv::rust_shared_type_to_c(&ty.1, fn_info)?
+				} else {
+					(conv::rust_type_to_c(&ty.1, fn_info, !mutability)
+						.map_err(|e| e.unwrap_or(syn::Error::new_spanned(ty.1.clone(), "invalid type")))?, "".into())
+				};
+				write!(&mut of, "{} ", cty_prefix)?;
 				write!(&mut of, "{}", ident)?;
+				write!(&mut of, "{}", cty_postfix)?;
 				if let Some((_, init)) = &local.init {
+					if is_shared {
+						return Err(syn::Error::new_spanned(init.clone(), "initializers not allowed in #[shared] declarations").into());
+					}
 					write!(&mut of, " = ")?;
 					write_expr(of.clone(), fn_info, &init)?;
 				}
@@ -294,12 +304,9 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &s
 			}*/
 			Err(syn::Error::new_spanned(item.clone(), "item not allowed"))?;
 		},
-		Stmt::Expr(e) if missing_semicolon_is_return => {
-			write!(&mut of, "return ")?;
+		Stmt::Expr(e) => {
 			write_expr(of.clone(), fn_info, &e)?;
-			writeln!(&mut of, ";")?;
 		},
-		Stmt::Expr(e) => Err(syn::Error::new_spanned(e.clone(), "missed semicolon"))?,
 		Stmt::Semi(e, _) => {
 			write_expr(of.clone(), fn_info, &e)?;
 			writeln!(&mut of, ";")?;
@@ -414,7 +421,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 				write!(&mut of, "if (")?;
 				write_expr(of.incr(), fn_info, &e.cond)?;
 				writeln!(&mut of, ") {{")?;
-				write_stmts(of.incr(), fn_info, &e.then_branch.stmts, false)?;
+				write_stmts(of.incr(), fn_info, &e.then_branch.stmts)?;
 				if let Some((_, else_branch)) = &e.else_branch {
 					writeln!(&mut of, "}} else {{")?;
 					write_expr(of.incr(), fn_info, &else_branch)?;
@@ -440,7 +447,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 		Expr::Block(e) => {
 			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
 				writeln!(&mut of, "{{")?;
-				write_stmts(of.incr(), fn_info, &e.block.stmts, false)?;
+				write_stmts(of.incr(), fn_info, &e.block.stmts)?;
 				writeln!(&mut of, "}}")?;
 			}
 		},

@@ -12,31 +12,67 @@ const C_VAR_NUM_TYPES     : &'static [&'static str] = &["float", "double", "char
 const SHORTHAND_TYPES     : &'static [&'static str] = &["float", "double", "char", "schar", "uchar", "short", "ushort", "int", "uint", "long", "ulong", "longlong", "ulonglong"];
 
 
+fn rust_shared_type_to_c_inner(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<'static, str>, Cow<'static, str>), Option<syn::Error>> {
+	use syn::{Type, Expr};
+	match ty {
+		Type::Slice(ty) => Ok((format!("extern __shared__ {}", rust_type_to_c(&ty.elem, fn_info, false)?).into(), "[]".into())),
+		Type::Array(ty) => match &ty.len {
+			Expr::Lit(syn::ExprLit{ lit: syn::Lit::Int(lit), .. }) => 
+				Ok((format!("__shared__ {}", rust_type_to_c(&ty.elem, fn_info, false)?).into(), format!("[{}]", lit.value()).into())),
+			_ => Err(Some(syn::Error::new_spanned(ty.clone(), "array length must be a literal number constant")))
+		},
+		Type::Reference(ty) => match &*ty.elem {
+			Type::Reference(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "reference-to-reference types are not supported in a #[shared] declaration"))),
+			Type::Array(_) => Err(None),
+			_ => rust_shared_type_to_c_inner(&ty.elem, fn_info)
+		},
+		Type::Paren(ty) => rust_shared_type_to_c_inner(&ty.elem, fn_info),
+		Type::Group(ty) => rust_shared_type_to_c_inner(&ty.elem, fn_info),
+		Type::Infer(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "inferred types are not supported"))),
+		_=> Err(None),
+	}
+}
+
+
+/// Converts a Rust `#[shared]` type into a C type
+/// 
+/// Returns `(prefix, postfix)` on success. 
+pub fn rust_shared_type_to_c(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<'static, str>, Cow<'static, str>), syn::Error> {
+	rust_shared_type_to_c_inner(ty, fn_info)
+		.map_err(|e| e.unwrap_or_else(|| syn::Error::new_spanned(ty.clone(), "only slice/array types are supported in a #[shared] declaration")))
+}
+
 /// Converts a Rust type into a C type
-pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo) -> Result<Cow<'static, str>, Option<syn::Error>> {
+pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, cnst: bool) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	use syn::Type;
 
-	match &ty {
-		Type::Slice(_) | Type::Array(_) => Err(None), // TODO: Auto-upload slices & arrays to CUDA
-		Type::Ptr(ptr) => {
-			match (&ptr.mutability, &ptr.const_token) {
+	let cty = match &ty {
+		Type::Slice(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "slice types are not yet supported"))), // TODO: slices
+		Type::Array(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "array types are not yet supported"))), // TODO: arrays
+		Type::Ptr(ty) => {
+			match (&ty.mutability, &ty.const_token) {
 				(Some(m), Some(c)) => Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
-				(None, Some(_)) => Ok(format!("const {}*", rust_type_to_c(&ptr.elem, fn_info)?).into()),
-				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ptr.elem, fn_info)?).into()),
-				(None, None) => Err(Some(syn::Error::new_spanned(ptr.clone(), "pointer must be mut or const"))),
+				(None, Some(_)) => Ok(format!("{}* const", rust_type_to_c(&ty.elem, fn_info, true)?).into()),
+				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ty.elem, fn_info, cnst)?).into()),
+				(None, None) => Err(Some(syn::Error::new_spanned(ty.clone(), "pointer must be mut or const"))),
 			}
 		},
-		Type::Reference(_) => Err(None), // TODO: Auto-uploading (?)
+		Type::Reference(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "reference types are not yet supported"))), // TODO: references
 		Type::BareFn(_) | Type::Never(_) | Type::TraitObject(_) | Type::ImplTrait(_) | Type::Macro(_) | Type::Verbatim(_) => Err(None),
-		Type::Tuple(t) if t.elems.len() == 0 => {
+		Type::Tuple(ty) if ty.elems.len() == 0 => {
 			// `()` type
 			Ok("void".into())
 		},
-		Type::Tuple(_) => Err(None), // TODO: Auto-unpack & repack
+		Type::Tuple(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "tuple types are not yet supported"))), // TODO: tuples
 		Type::Path(path) => rust_type_path_to_c(&path, fn_info),
-		Type::Paren(inner) => rust_type_to_c(&inner.elem, fn_info),
-		Type::Group(inner) => rust_type_to_c(&inner.elem, fn_info),
-		Type::Infer(inner) => Err(Some(syn::Error::new_spanned(inner.clone(), "inferred types are not supported")))
+		Type::Paren(ty) => rust_type_to_c(&ty.elem, fn_info, cnst),
+		Type::Group(ty) => rust_type_to_c(&ty.elem, fn_info, cnst),
+		Type::Infer(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "inferred types are not supported")))
+	};
+	if cnst {
+		cty.map(|c| format!("{} const", c).into())
+	} else {
+		cty
 	}
 }
 
@@ -51,6 +87,9 @@ pub fn rust_type_path_to_c(type_path: &syn::TypePath, fn_info: &FnInfo) -> Resul
 
 /// Converts a Rust path into a C type
 pub fn rust_path_to_c(path: &syn::Path, fn_info: &FnInfo) -> Result<Cow<'static, str>, Option<syn::Error>> {
+	use proc_macro2::TokenStream;
+	use quote::ToTokens;
+
 	// Check for Rust number primitives
 	for (&rty, &cty) in RUST_FIXED_NUM_TYPES.iter().zip(C_FIXED_NUM_TYPES.iter()) {
 		if path.is_ident(rty) {
@@ -83,6 +122,14 @@ pub fn rust_path_to_c(path: &syn::Path, fn_info: &FnInfo) -> Result<Cow<'static,
 			return Ok(generic_name.clone().into());
 		}
 	}
+
+	// If it is an unknown ident, just pass through
+	// TODO: Figure out a better way of doing this
+	if path.leading_colon.is_none() && path.segments.len() == 1 {
+		let mut ts = TokenStream::new();
+		path.to_tokens(&mut ts);
+		return Ok(format!("{}", ts).into())
+	}
 	Err(None)
 }
 
@@ -99,8 +146,8 @@ pub fn rust_fn_arg_to_c(arg: &syn::FnArg, fn_info: &FnInfo) -> Result<Option<(Co
 		FnArg::Captured(arg) => {
 			match &arg.pat {
 				Pat::Wild(_) => Ok(None),
-				Pat::Ident(pat) if pat.by_ref.is_none() && pat.mutability.is_none() && pat.subpat.is_none() => {
-					match conv::rust_type_to_c(&arg.ty, fn_info) {
+				Pat::Ident(pat) if pat.by_ref.is_none() && pat.subpat.is_none() => {
+					match conv::rust_type_to_c(&arg.ty, fn_info, pat.mutability.is_none()) {
 						Ok(t) => Ok(Some((t, pat.ident.clone()))),
 						Err(Some(e)) => Err(e),
 						Err(None) => Err(syn::Error::new_spanned(arg.ty.clone(), "arguments of this type are not allowed")),
@@ -112,7 +159,7 @@ pub fn rust_fn_arg_to_c(arg: &syn::FnArg, fn_info: &FnInfo) -> Result<Option<(Co
 	}
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CfgType {
 	Declaration,
 	DeviceCode,
@@ -130,11 +177,17 @@ pub fn is_item_enabled<'a, I: IntoIterator<Item=&'a syn::Attribute>>(attrs: I, c
 }
 
 /// Check if an attribute is valid and means that the item/expression it is attached to is enabled
-pub fn is_item_enabled_attr(attr: &syn::Attribute, _cfg_type: CfgType) -> Result<bool, syn::Error> {
+pub fn is_item_enabled_attr(attr: &syn::Attribute, cfg_type: CfgType) -> Result<bool, syn::Error> {
 	use syn::Meta;
 
 	if FunctionType::try_from_attr(attr).is_some() {
 		return Ok(true);
+	}
+
+	if cfg_type == CfgType::DeviceCode {
+		if attr.path.is_ident("shared") {
+			return Ok(true);
+		}
 	}
 
 	if let syn::AttrStyle::Inner(_) = attr.style {

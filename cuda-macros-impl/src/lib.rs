@@ -307,6 +307,7 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 	use std::path::PathBuf;
 	use std::fs::OpenOptions;
 	use std::io::prelude::*;
+	use std::process::{Command, Stdio};
 	
 	let out_path = std::env::var_os("CUDA_MACROS_OUT_DIR").map(|p| PathBuf::from(p).join("debug.rs"));
 	let from_ts = if out_path.is_some() {
@@ -318,19 +319,26 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 	};
 
 	let ts = process_all_fns_inner(item, fn_type, direct);
-	
+
 	// Debug output
 	if let Some(p) = out_path {
-		if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(&p) {
+		if let Ok(mut f) = OpenOptions::new().read(true).append(true).create(true).open(&p) {
 			writeln!(&mut f).ok();
-			writeln!(&mut f, "/* === FROM === */").ok();
+			writeln!(&mut f, "/* *** FROM *** */").ok();
 			writeln!(&mut f, "{}", &from_ts.unwrap()).ok();
-			writeln!(&mut f, "/* ==== TO ==== */").ok();
+			writeln!(&mut f, "/* ***  TO  *** */").ok();
 			writeln!(&mut f, "{}", &ts).ok();
-			writeln!(&mut f, "/* ============ */").ok();
+			writeln!(&mut f, "/* ************ */\n").ok();
+			std::mem::drop(f);
+			
+			// Run rustfmt if possible
+			Command::new("rustfmt").arg("--emit").arg("files").arg("--").arg(&p)
+				.stdin(Stdio::null())
+				.stdout(Stdio::null())
+				.stderr(Stdio::null())
+				.status().ok();
 		}
 	}
-
 	ts
 }
 
