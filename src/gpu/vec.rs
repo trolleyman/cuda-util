@@ -116,7 +116,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// # Examples
 	/// ```
 	/// # use cuda_util::*;
-	/// let a = GpuVec::new(&[1, 2, 3, 4][..]);
+	/// let a = GpuVec::from(&[1, 2, 3, 4][..]);
 	/// let b: GpuVec<_> = &a[1..].to_gpu_vec();
 	/// assert_eq!(b.to_vec(), &[2, 3, 4]);
 	/// ```

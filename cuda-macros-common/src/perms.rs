@@ -26,7 +26,7 @@ pub fn permutations_err<E, T: Clone, F>(values: &[T], len: usize, mut f: F) -> R
 fn test_permutations_err() {
 	let values = &[1, 2];
 	let mut v = Vec::new();
-	permutations_err(values, 3, |arr| { v.push(Vec::from(arr)); if arr == &[2, 1, 2] { Err(()) } else { Ok(()) } });
+	permutations_err(values, 3, |arr| { v.push(Vec::from(arr)); if arr == &[2, 1, 2] { Err(()) } else { Ok(()) } }).ok();
 	let expected = &[
 		&[1, 1, 1],
 		&[1, 1, 2],
