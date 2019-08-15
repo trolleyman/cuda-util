@@ -96,15 +96,15 @@ impl_cuda_number!(i64 => I64);
 fn test_name() {
 	use crate::*;
 
-	assert_eq!(f32::tensor_elem_type().name(), "f32");
-	assert_eq!(f64::tensor_elem_type().name(), "f64");
+	assert_eq!(f32::tensor_elem_type().rust_name(), "f32");
+	assert_eq!(f64::tensor_elem_type().rust_name(), "f64");
 
-	assert_eq!(u8 ::tensor_elem_type().name(), "u8");
-	assert_eq!(i8 ::tensor_elem_type().name(), "i8");
-	assert_eq!(u16::tensor_elem_type().name(), "u16");
-	assert_eq!(i16::tensor_elem_type().name(), "i16");
-	assert_eq!(u32::tensor_elem_type().name(), "u32");
-	assert_eq!(i32::tensor_elem_type().name(), "i32");
-	assert_eq!(u64::tensor_elem_type().name(), "u64");
-	assert_eq!(i64::tensor_elem_type().name(), "i64");
+	assert_eq!(u8 ::tensor_elem_type().rust_name(), "u8");
+	assert_eq!(i8 ::tensor_elem_type().rust_name(), "i8");
+	assert_eq!(u16::tensor_elem_type().rust_name(), "u16");
+	assert_eq!(i16::tensor_elem_type().rust_name(), "i16");
+	assert_eq!(u32::tensor_elem_type().rust_name(), "u32");
+	assert_eq!(i32::tensor_elem_type().rust_name(), "i32");
+	assert_eq!(u64::tensor_elem_type().rust_name(), "u64");
+	assert_eq!(i64::tensor_elem_type().rust_name(), "i64");
 }

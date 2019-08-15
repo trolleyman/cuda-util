@@ -12,6 +12,19 @@ const C_VAR_NUM_TYPES     : &'static [&'static str] = &["float", "double", "char
 const SHORTHAND_TYPES     : &'static [&'static str] = &["float", "double", "char", "schar", "uchar", "short", "ushort", "int", "uint", "long", "ulong", "longlong", "ulonglong"];
 
 
+pub fn get_inner_expr(e: &syn::Expr) -> Result<&syn::Expr, syn::Error> {
+	use syn::Expr;
+
+	match e {
+		Expr::Paren(e) if e.attrs.len() != 0 => Err(syn::Error::new_spanned(e.clone(), "attributes are not allowed here")),
+		Expr::Group(e) if e.attrs.len() != 0 => Err(syn::Error::new_spanned(e.clone(), "attributes are not allowed here")),
+		Expr::Paren(e) => Ok(&*get_inner_expr(&e.expr)?),
+		Expr::Group(e) => Ok(&*get_inner_expr(&e.expr)?),
+		_ => Ok(e),
+	}
+}
+
+
 fn rust_shared_type_to_c_inner(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<'static, str>, Cow<'static, str>), Option<syn::Error>> {
 	use syn::{Type, Expr};
 	match ty {

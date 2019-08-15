@@ -90,9 +90,15 @@ fn write_header_intro(of: &mut FileLike) -> Result<(), TransError> {
 #endif
 
 typedef struct {
-	uint32_t grid_size[3];
-	uint32_t block_size[3];
-	uint32_t shared_mem_size;
+	uint32_t x;
+	uint32_t y;
+	uint32_t z;
+} rust_cuda_macros_dim3_t;
+
+typedef struct {
+	rust_cuda_macros_dim3_t grid_size;
+	rust_cuda_macros_dim3_t block_size;
+	size_t shared_mem_size;
 	cudaStream_t cuda_stream;
 } rust_cuda_macros_execution_config_t;
 
@@ -231,8 +237,8 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnI
 	} else {
 		writeln!(of, "\treturn {}<<<", &f.ident)?;
 	}
-	writeln!(of, "\t\tdim3(rust_cuda_macros_config.grid_size[0], rust_cuda_macros_config.grid_size[1], rust_cuda_macros_config.grid_size[2]),")?;
-	writeln!(of, "\t\tdim3(rust_cuda_macros_config.block_size[0], rust_cuda_macros_config.block_size[1], rust_cuda_macros_config.block_size[2]),")?;
+	writeln!(of, "\t\tdim3(rust_cuda_macros_config.grid_size.x, rust_cuda_macros_config.grid_size.y, rust_cuda_macros_config.grid_size.z),")?;
+	writeln!(of, "\t\tdim3(rust_cuda_macros_config.block_size.x, rust_cuda_macros_config.block_size.y, rust_cuda_macros_config.block_size.z),")?;
 	writeln!(of, "\t\trust_cuda_macros_config.shared_mem_size,")?;
 	writeln!(of, "\t\trust_cuda_macros_config.cuda_stream")?;
 	writeln!(of, "\t>>>({});", args)?;
@@ -432,15 +438,60 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 		Expr::While(_e) => {
 			unimplemented!("Expr::While"); // TODO
 		},
-		Expr::ForLoop(_e) => {
-			unimplemented!("Expr::ForLoop"); // TODO
+		Expr::ForLoop(e) => {
+			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
+				if let Some(label) = &e.label {
+					return Err(syn::Error::new_spanned(label.clone(), "labels on for loops are not supported").into());
+				}
+				
+				// Get identifier
+				let ident: Cow<'static, str> = match &*e.pat {
+					syn::Pat::Wild(_) => "_wild".into(),
+					syn::Pat::Ident(pat) => {
+						if let Some(r) = &pat.by_ref {
+							return Err(syn::Error::new_spanned(r.clone(), "`ref` bindings are not allowed").into());
+						}
+						if let Some(m) = &pat.mutability {
+							return Err(syn::Error::new_spanned(m.clone(), "`mut` bindings are not allowed").into());
+						}
+						if let Some((_, pat)) = &pat.subpat {
+							return Err(syn::Error::new_spanned(pat.clone(), "subpatterns are not allowed").into());
+						}
+						pat.ident.to_string().into()
+					},
+					_ => return Err(syn::Error::new_spanned(e.pat.clone(), "only ident patterns are allowed (e.g. `i`)").into()),
+				};
+				
+				// Get range
+				let ((from, to), limits) = match conv::get_inner_expr(&e.expr)? {
+					Expr::Range(e) => (match (&e.from, &e.to) {
+						(None, None) => return Err(syn::Error::new_spanned(e.clone(), "unbounded ranges are not allowed").into()),
+						(Some(_), None) | (None, Some(_)) => return Err(syn::Error::new_spanned(e.clone(), "ranges must be fully defined").into()),
+						(Some(from), Some(to)) => (&*from, &*to),
+					}, e.limits),
+					//Expr::Array(e) => /* TODO */
+					_ => return Err(syn::Error::new_spanned(e.clone(), "only range expressions are allowed (e.g. `0..10`)").into()),
+				};
+				let cmp = match limits {
+					syn::RangeLimits::HalfOpen(_) => "<",
+					syn::RangeLimits::Closed(_) => "<=",
+				};
+				
+				write!(&mut of, "for (int {} = ", &ident)?;
+				write_expr_with_brackets(of.incr().incr(), fn_info, from)?;
+				write!(&mut of, "; {} {} ", &ident, cmp)?;
+				write_expr_with_brackets(of.incr().incr(), fn_info, to)?;
+				writeln!(&mut of, "; {}++) {{", &ident)?;
+				write_stmts(of.incr(), fn_info, &e.body.stmts)?;
+				writeln!(&mut of, "}}")?;
+			}
 		},
 		Expr::Loop(_e) => {
 			unimplemented!("Expr::Loop"); // TODO
 		},
 		Expr::Match(e) => {
 			// TODO
-			Err(syn::Error::new_spanned(e.clone(), "match expressions are not supported, but potentially will be in the future"))?
+			return Err(syn::Error::new_spanned(e.clone(), "match expressions are not yet supported").into())
 		},
 		Expr::Closure(e) => Err(syn::Error::new_spanned(e.clone(), "closures are not supported"))?,
 		Expr::Unsafe(e) => Err(syn::Error::new_spanned(e.clone(), "unsafe blocks are not supported"))?,
