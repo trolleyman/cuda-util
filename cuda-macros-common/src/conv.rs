@@ -53,7 +53,7 @@ pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, cnst: bool) -> Result<Co
 			match (&ty.mutability, &ty.const_token) {
 				(Some(m), Some(c)) => Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
 				(None, Some(_)) => Ok(format!("{}* const", rust_type_to_c(&ty.elem, fn_info, true)?).into()),
-				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ty.elem, fn_info, cnst)?).into()),
+				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ty.elem, fn_info, false)?).into()),
 				(None, None) => Err(Some(syn::Error::new_spanned(ty.clone(), "pointer must be mut or const"))),
 			}
 		},
