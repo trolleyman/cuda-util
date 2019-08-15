@@ -1,11 +1,63 @@
 
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
-use std::mem::{MaybeUninit, size_of};
+use std::ops::{self, Deref, DerefMut};
+use std::mem::{ManuallyDrop, MaybeUninit, size_of};
 use std::fmt;
+use std::convert::{AsRef, AsMut};
+
+use cfg_if::cfg_if;
+
+mod index;
+pub use self::index::*;
 
 use crate::rcuda::*;
 use super::func;
+
+
+/// Reference to a device location
+#[derive(Debug)]
+pub struct GpuRef<'a, T> {
+	_phantom: PhantomData<&'a T>,
+	value: ManuallyDrop<T>
+}
+unsafe impl<'a, T: Send> Send for GpuRef<'a, T> {}
+unsafe impl<'a, T: Sync> Sync for GpuRef<'a, T> {}
+impl<'a, T> GpuRef<'a, T> {
+	/// Constructs a new `GpuRef<'a, T>`.
+	/// 
+	/// # Safety
+	/// `ptr` must be a valid device pointer that lasts for the lifetime `'a`.
+	pub unsafe fn new(value: T) -> Self {
+		GpuRef {
+			_phantom: PhantomData,
+			value: ManuallyDrop::new(value)
+		}
+	}
+
+	/// Constructs a new `GpuRef<'a, T>`.
+	/// 
+	/// # Safety
+	/// `ptr` must be a valid device pointer that lasts for the lifetime `'a`.
+	pub unsafe fn from_device_ptr(ptr: *const T) -> CudaResult<Self> {
+		Ok(GpuRef::new(cuda_copy_value_from_device(ptr)?))
+	}
+
+	/// Gets a reference to the value
+	pub fn get(&self) -> &T {
+		self.deref()
+	}
+}
+impl<'a, T> Deref for GpuRef<'a, T> {
+	type Target = T;
+	fn deref(&self) -> &T {
+		&self.value
+	}
+}
+impl<'a, T> AsRef<T> for GpuRef<'a, T> {
+	fn as_ref(&self) -> &T {
+		self.deref()
+	}
+}
 
 
 /// Mutable reference to a device location
@@ -13,14 +65,15 @@ use super::func;
 /// Values that are written to this are cached until this is dropped, or the [flush()](#method.flush) is called, at which point
 /// the value is written to the device
 #[derive(Debug)]
-pub struct GpuMutRef<'a, T: Copy> {
+pub struct GpuMutRef<'a, T> {
 	_phantom: PhantomData<&'a T>,
 	ptr: *mut T,
-	value: T,
+	value: ManuallyDrop<T>,
 }
-unsafe impl<'a, T: Copy + Send> Send for GpuMutRef<'a, T> {}
-impl<'a, T: Copy> GpuMutRef<'a, T> {
-	/// Constructs a new `GpuMutRef<T>`.
+unsafe impl<'a, T: Send> Send for GpuMutRef<'a, T> {}
+unsafe impl<'a, T: Sync> Sync for GpuMutRef<'a, T> {}
+impl<'a, T> GpuMutRef<'a, T> {
+	/// Constructs a new `GpuMutRef<'a, T>`.
 	/// 
 	/// # Safety
 	/// `ptr` must be a valid device pointer that lasts for the lifetime `'a`.
@@ -28,13 +81,34 @@ impl<'a, T: Copy> GpuMutRef<'a, T> {
 		GpuMutRef {
 			_phantom: PhantomData,
 			ptr,
-			value,
+			value: ManuallyDrop::new(value)
 		}
+	}
+
+	/// Constructs a new `GpuMutRef<'a, T>`.
+	/// 
+	/// # Safety
+	/// `ptr` must be a valid device pointer that lasts for the lifetime `'a`.
+	pub unsafe fn from_device_ptr(ptr: *mut T) -> CudaResult<Self> {
+		Ok(GpuMutRef::new(ptr, cuda_copy_value_from_device(ptr)?))
+	}
+
+	/// Gets a reference to the value
+	pub fn get(&self) -> &T {
+		self.deref()
+	}
+
+	/// Gets a mutable reference to the value
+	pub fn get_mut(&mut self) -> &mut T {
+		self.deref_mut()
 	}
 
 	/// Writes the value given into the cache
 	pub fn write(&mut self, value: T) {
-		self.value = value;
+		unsafe {
+			ManuallyDrop::drop(&mut self.value);
+		}
+		*self.value = value;
 	}
 
 	/// Copies the cached value to the pointer location given
@@ -43,30 +117,40 @@ impl<'a, T: Copy> GpuMutRef<'a, T> {
 		self.ptr = std::ptr::null_mut();
 		if ptr != std::ptr::null_mut() {
 			unsafe {
-				cuda_copy_value_to_device(ptr, self.value)
+				cuda_copy_value_to_device(ptr, &*self.value)
 			}
 		} else {
 			Ok(())
 		}
 	}
 }
-impl<'a, T: Copy> Deref for GpuMutRef<'a, T> {
+impl<'a, T> Deref for GpuMutRef<'a, T> {
 	type Target = T;
 	fn deref(&self) -> &T {
-		&self.value
+		&*self.value
 	}
 }
-impl<'a, T: Copy> DerefMut for GpuMutRef<'a, T> {
+impl<'a, T> DerefMut for GpuMutRef<'a, T> {
 	fn deref_mut(&mut self) -> &mut T {
-		&mut self.value
+		&mut *self.value
 	}
 }
-impl<'a, T: Copy> Drop for GpuMutRef<'a, T> {
+impl<'a, T> AsRef<T> for GpuMutRef<'a, T> {
+	fn as_ref(&self) -> &T {
+		self.deref()
+	}
+}
+impl<'a, T> AsMut<T> for GpuMutRef<'a, T> {
+	fn as_mut(&mut self) -> &mut T {
+		self.deref_mut()
+	}
+}
+impl<'a, T> Drop for GpuMutRef<'a, T> {
 	/// Flushes the value to the device.
 	fn drop(&mut self) {
 		if self.ptr != std::ptr::null_mut() {
 			unsafe {
-				cuda_copy_value_to_device(self.ptr, self.value).ok();
+				cuda_copy_value_to_device(self.ptr, &*self.value).ok();
 			}
 		}
 	}
@@ -78,8 +162,8 @@ impl<'a, T: Copy> Drop for GpuMutRef<'a, T> {
 /// [`Unsize`](https://doc.rust-lang.org/std/marker/trait.Unsize.html)d type that can be only accessed via a reference (e.g. `&mut GpuSlice`).
 /// 
 /// Can be created by dereferencing a GpuVec, see [`GpuVec::deref()`](struct.GpuVec.html#method.deref).
-pub struct GpuSlice<T: Copy>([T]);
-impl<T: Copy> GpuSlice<T> {
+pub struct GpuSlice<T>(ManuallyDrop<[T]>);
+impl<T> GpuSlice<T> {
 	/// Constructs an immutable GpuSlice from raw parts.
 	/// 
 	/// # Safety
@@ -102,7 +186,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// 
 	/// # Panics
 	/// If there is a CUDA error while performing the operation.
-	pub fn to_vec(&self) -> Vec<T> {
+	pub fn copy_to_vec(&self) -> Vec<T> where T: Copy {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
 			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
@@ -123,7 +207,7 @@ impl<T: Copy> GpuSlice<T> {
 	/// 
 	/// # Panics
 	/// If there is a CUDA error while performing the operation.
-	pub fn to_gpu_vec(&self) -> GpuVec<T> {
+	pub fn copy_to_gpu_vec(&self) -> GpuVec<T> where T: Copy {
 		let mut v = GpuVec::with_capacity(self.len());
 		unsafe {
 			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
@@ -148,12 +232,12 @@ impl<T: Copy> GpuSlice<T> {
 	/// 
 	/// # Panics
 	/// If there is a CUDA error while performing the operation.
-	pub fn first(&self) -> Option<T> {
+	pub fn first<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
 		} else {
 			unsafe {
-				Some(cuda_copy_value_from_device(self.as_ptr()).expect("CUDA error"))
+				Some(GpuRef::from_device_ptr(self.as_ptr()).expect("CUDA error"))
 			}
 		}
 	}
@@ -169,9 +253,7 @@ impl<T: Copy> GpuSlice<T> {
 			None
 		} else {
 			unsafe {
-				let ptr = self.as_mut_ptr();
-				let value = cuda_copy_value_from_device(ptr).expect("CUDA error");
-				Some(GpuMutRef::new(ptr, value))
+				Some(GpuMutRef::from_device_ptr(self.as_mut_ptr()).expect("CUDA error"))
 			}
 		}
 	}
@@ -182,12 +264,12 @@ impl<T: Copy> GpuSlice<T> {
 	/// 
 	/// # Panics
 	/// If there is a CUDA error while performing the operation.
-	pub fn last(&self) -> Option<T> {
+	pub fn last<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
 		} else {
 			unsafe {
-				Some(cuda_copy_value_from_device(self.0.as_ptr().add(self.len() - 1)).expect("CUDA error"))
+				Some(GpuRef::from_device_ptr(self.as_ptr().add(self.len() - 1)).expect("CUDA error"))
 			}
 		}
 	}
@@ -203,9 +285,7 @@ impl<T: Copy> GpuSlice<T> {
 			None
 		} else {
 			unsafe {
-				let ptr = self.as_mut_ptr().add(self.len() - 1);
-				let value = cuda_copy_value_from_device(ptr).expect("CUDA error");
-				Some(GpuMutRef::new(ptr, value))
+				Some(GpuMutRef::from_device_ptr(self.as_mut_ptr().add(self.len() - 1)).expect("CUDA error"))
 			}
 		}
 	}
@@ -265,7 +345,7 @@ impl<T: Copy> GpuSlice<T> {
 		}
 	}
 
-	/// Reverses the order of the slice.
+	/// Reverses the order of the elements in the slice.
 	/// 
 	/// # Examples
 	/// ```
@@ -279,9 +359,10 @@ impl<T: Copy> GpuSlice<T> {
 	pub fn reverse(&mut self) {
 		func::reverse_vector(self.as_mut_ptr(), self.len());
 	}
+
 	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below reverse()
 }
-impl<T: Copy> fmt::Debug for GpuSlice<T> {
+impl<T> fmt::Debug for GpuSlice<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		write!(f, "GpuSlice([<{:p}>; {}])", self.as_ptr(), self.len())?;
 		Ok(())
@@ -291,13 +372,15 @@ impl<T: Copy> fmt::Debug for GpuSlice<T> {
 
 /// Contiguous growable array type, similar to `Vec<T>` but stored on the GPU.
 #[derive(Debug)]
-pub struct GpuVec<T: Copy> {
+pub struct GpuVec<T> {
 	_type: PhantomData<T>,
 	ptr: *mut T,
 	len: usize,
 	capacity: usize,
 }
-impl<T: Copy> GpuVec<T> {
+unsafe impl<T: Send> Send for GpuVec<T> {}
+unsafe impl<T: Sync> Sync for GpuVec<T> {}
+impl<T> GpuVec<T> {
 	/// Asserts that the capacity is less than or equal to [`isize::max_value()`](https://doc.rust-lang.org/nightly/std/primitive.isize.html#method.max_value).
 	fn assert_capacity_valid(capacity: usize) {
 		if capacity > isize::max_value() as usize {
@@ -363,7 +446,7 @@ impl<T: Copy> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// If `len` overflows
-	pub fn try_from_slice(data: &[T]) -> CudaResult<Self> {
+	pub fn try_from_slice(data: &[T]) -> CudaResult<Self> where T: Copy {
 		let len = data.len();
 		let len_bytes = len.checked_mul(size_of::<T>()).expect("overflow");
 		let capacity = if len_bytes.is_power_of_two() {
@@ -385,6 +468,46 @@ impl<T: Copy> GpuVec<T> {
 				capacity,
 			})
 		}
+	}
+
+	/// Tries to moves a vector of values from host to device storage.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::GpuVec;
+	/// let data = vec![vec![1, 2, 3], vec![3, 4, 5]];
+	/// // Note that `v` is a GPU vector or CPU vectors. The CPU vectors still need to be
+	/// // moved to the  CPU to be accessed.
+	/// let mut v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
+	/// assert_eq!(v.to_vec(), data);
+	/// ```
+	/// 
+	/// # Panics
+	/// If `len` overflows
+	pub fn try_from_vec(data: Vec<T>) -> CudaResult<Self> {
+		let mut v = GpuVec::with_capacity(data.len());
+		unsafe {
+			cuda_memcpy(v.as_mut_ptr(), data.as_ptr(), data.len(), CudaMemcpyKind::HostToDevice)?;
+			v.set_len(data.len());
+			// Don't call `Drop` on `T`, just drop the `Vec`
+			let _ = std::mem::transmute::<Vec<T>, Vec<ManuallyDrop<T>>>(data);
+		}
+		Ok(v)
+	}
+
+	/// Moves the data in the slice to the CPU and returns it as a `Vec`.
+	/// 
+	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
+	/// 
+	/// # Panics
+	/// If there is a CUDA error while performing the operation.
+	pub fn into_vec(self) -> Vec<T> {
+		let mut v = Vec::with_capacity(self.len());
+		unsafe {
+			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
+			v.set_len(self.len());
+		}
+		v
 	}
 
 	/// Returns the number of elements the vector can hold without reallocating.
@@ -510,7 +633,7 @@ impl<T: Copy> GpuVec<T> {
 		unsafe {
 			// Copy removed element to `x`
 			cuda_memcpy(x.as_mut_ptr(), index_ptr, 1, CudaMemcpyKind::DeviceToHost).expect("CUDA error");
-			// Copy end elemnt to removed element's position
+			// Copy end element to removed element's position
 			cuda_memcpy(index_ptr, end_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			// Subtract 1 from length of vector
 			self.len -= 1;
@@ -541,7 +664,8 @@ impl<T: Copy> GpuVec<T> {
 				cuda_memcpy(dst, self.ptr, index, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			}
 			// Copy element
-			cuda_memcpy(dst.offset(index as isize), &element as *const T, 1, CudaMemcpyKind::HostToDevice).expect("CUDA error");
+			let element = ManuallyDrop::new(element);
+			cuda_memcpy(dst.offset(index as isize), &*element as *const T, 1, CudaMemcpyKind::HostToDevice).expect("CUDA error");
 			// Copy last part
 			if index < self.len {
 				cuda_memcpy(dst.offset(index as isize + 1), self.ptr, self.len - index - 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
@@ -616,7 +740,8 @@ impl<T: Copy> GpuVec<T> {
 	pub fn push(&mut self, value: T) {
 		self.reserve(1);
 		unsafe {
-			cuda_memcpy(self.ptr.add(self.len), &value as *const T, 1, CudaMemcpyKind::HostToDevice).expect("CUDA error");
+			let value = ManuallyDrop::new(value);
+			cuda_memcpy(self.ptr.add(self.len), &*value as *const T, 1, CudaMemcpyKind::HostToDevice).expect("CUDA error");
 		}
 		self.len += 1;
 	}
@@ -644,6 +769,7 @@ impl<T: Copy> GpuVec<T> {
 			unsafe {
 				self.len -= 1;
 				Some(cuda_copy_value_from_device(self.ptr.add(self.len)).expect("CUDA error"))
+				// TODO: Shrink if optimal
 			}
 		}
 	}
@@ -664,13 +790,22 @@ impl<T: Copy> GpuVec<T> {
 	// TODO: Everything in https://doc.rust-lang.org/std/vec/struct.Vec.html below append()
 
 	/// Deallocates the memory held by the `GpuVec<T>`
-	pub fn free(mut self) -> CudaResult<()> {
-		let ptr = self.ptr;
-		self.ptr = std::ptr::null_mut();
-		self.capacity = 0;
-		self.len = 0;
+	pub fn free(self) -> CudaResult<()> {
+		let e = if <T as HasDrop>::has_drop() {
+			// `Drop` requires that the data is on the CPU, so copy the data to a `Vec` before dropping
+			let mut vec = Vec::with_capacity(self.len());
+			unsafe {
+				let e = cuda_memcpy(vec.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost);
+				if e.is_ok() {
+					vec.set_len(self.len())
+				}
+				e
+			}
+		} else {
+			Ok(())
+		};
 		unsafe {
-			cuda_free_device(ptr)
+			e.and(cuda_free_device(self.ptr))
 		}
 	}
 }
@@ -679,8 +814,19 @@ impl<T: Copy> From<&[T]> for GpuVec<T> {
 		Self::try_from_slice(data).expect("CUDA error")
 	}
 }
+impl<T> From<Vec<T>> for GpuVec<T> {
+	fn from(data: Vec<T>) -> Self {
+		Self::try_from_vec(data).expect("CUDA error")
+	}
+}
 
-impl<T: Copy> Deref for GpuVec<T> {
+impl<T> Default for GpuVec<T> {
+	fn default() -> Self {
+		GpuVec::new()
+	}
+}
+
+impl<T> Deref for GpuVec<T> {
 	type Target = GpuSlice<T>;
 
 	fn deref(&self) -> &GpuSlice<T> {
@@ -688,13 +834,13 @@ impl<T: Copy> Deref for GpuVec<T> {
 	}
 }
 
-impl<T: Copy> DerefMut for GpuVec<T> {
+impl<T> DerefMut for GpuVec<T> {
 	fn deref_mut(&mut self) -> &mut GpuSlice<T> {
 		unsafe { GpuSlice::from_raw_parts_mut(self.ptr, self.len) }
 	}
 }
 
-impl<T: Copy> Clone for GpuVec<T> {
+impl<T> Clone for GpuVec<T> {
 	fn clone(&self) -> Self {
 		unsafe {
 			let mut v = Self::with_capacity(self.len());
@@ -705,10 +851,93 @@ impl<T: Copy> Clone for GpuVec<T> {
 	}
 }
 
-impl<T: Copy> Drop for GpuVec<T> {
+impl<T> Drop for GpuVec<T> {
 	fn drop(&mut self) {
-		unsafe { cuda_free_device(self.ptr).ok() };
+		if <T as HasDrop>::has_drop() {
+			// `Drop` requires that the data is on the CPU
+			let mut vec = Vec::with_capacity(self.len());
+			unsafe {
+				if let Ok(_) = cuda_memcpy(vec.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost) {
+					vec.set_len(self.len())
+				}
+			}
+		}
+		unsafe {
+			cuda_free_device(self.ptr).ok();
+		}
 	}
 }
+
+trait HasDrop {
+	fn has_drop() -> bool;
+}
+
+cfg_if! {
+	if #[cfg(feature="specialization")] {
+		impl<T> HasDrop for T {
+			default fn has_drop() -> bool {
+				false
+			}
+		}
+		impl<T> HasDrop for T where T: Drop {
+			fn has_drop() -> bool {
+				true
+			}
+		}
+	} else {
+		// Specialization is not enabled -- no way to tell if there is a `Drop` impl on `T`, so assume all types have it
+		impl<T> HasDrop for T {
+			fn has_drop() -> bool {
+				true
+			}
+		}
+	}
+}
+
+// TODO: impl<T> PartialOrd<Vec<T>> for GpuVec<T> where T: PartialOrd<T>
+// TODO: impl<T> Ord for GpuVec<T> where T: Ord
+
+// TODO: impl<T> IntoIterator for GpuVec<T>
+// TODO: impl<'a, T> IntoIterator for &'a mut GpuVec<T>
+// TODO: impl<'a, T> IntoIterator for &'a GpuVec<T>
+
+impl<T> AsRef<GpuSlice<T>> for GpuVec<T> {
+	fn as_ref(&self) -> &GpuSlice<T> {
+		self.deref()
+	}
+}
+
+impl<T> AsMut<GpuSlice<T>> for GpuVec<T> {
+	fn as_mut(&mut self) -> &mut GpuSlice<T> {
+		self.deref_mut()
+	}
+}
+
+impl<T> AsRef<GpuVec<T>> for GpuVec<T> {
+	fn as_ref(&self) -> &GpuVec<T> {
+		self
+	}
+}
+
+impl<T> AsMut<GpuVec<T>> for GpuVec<T> {
+	fn as_mut(&mut self) -> &mut GpuVec<T> {
+		self
+	}
+}
+
+impl<T, I: GpuSliceRange<T>> ops::Index<I> for GpuVec<T> {
+	type Output = GpuSlice<T>;
+	fn index(&self, index: I) -> &GpuSlice<T> {
+		index.index(self)
+	}
+}
+impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuVec<T> {
+	fn index_mut(&mut self, index: I) -> &mut GpuSlice<T> {
+		index.index_mut(self)
+	}
+}
+
+// TODO: impl<T> FromIterator<T> for GpuVec<T>
+
 
 // TODO: Vec ops: https://doc.rust-lang.org/std/vec/struct.Vec.html

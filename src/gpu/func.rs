@@ -6,7 +6,7 @@ fn div_ceil(x: usize, divisor: usize) -> usize {
 	x / divisor + (x % divisor != 0) as usize
 }
 
-pub fn reverse_vector<T: Copy>(vec: *mut T, len: usize) {
+pub fn reverse_vector<T>(vec: *mut T, len: usize) {
 	let num_threads_total = len / 2;
 	let num_threads_per_block = 1024;
 	let num_blocks = div_ceil(num_threads_total, num_threads_per_block);

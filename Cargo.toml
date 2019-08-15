@@ -6,6 +6,7 @@ edition = "2018"
 build = "build.rs"
 
 [features]
+specialization = []
 cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros/cuda_6_5" , "cuda-macros-build/cuda_6_5" ]
 cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros/cuda_7_0" , "cuda-macros-build/cuda_7_0" ]
 cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros/cuda_7_5" , "cuda-macros-build/cuda_7_5" ]
@@ -18,10 +19,12 @@ cuda_10_1 = ["cuda/cuda_10_1", "cuda-macros/cuda_10_1", "cuda-macros-build/cuda_
 
 [build-dependencies]
 cuda-macros-build = { path = "./cuda-macros-build" }
+rustc_version = "0.2.3"
 
 [dependencies]
 cuda-macros = { path = "./cuda-macros" }
 cuda = "0.4.0-pre.2"
+cfg-if = "0.1.9"
 num = "0.2.0"
 ndarray = "0.12.1"
 libc = "0.2"

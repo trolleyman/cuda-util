@@ -1,3 +1,4 @@
+#![cfg_attr(feature="specialization", feature(specialization))]
 
 extern crate num;
 extern crate ndarray;
