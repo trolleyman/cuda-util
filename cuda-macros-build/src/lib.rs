@@ -20,6 +20,31 @@ lazy_static! {
 	static ref BUILD_DIRNAME: String = format!("rust_cuda-macros_build_{}_{}_{}", whoami::username(), std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
 }
 
+pub struct BuildOptions {
+	pub(crate) features: Vec<String>,
+}
+impl BuildOptions {
+	pub fn new() -> Self {
+		BuildOptions {
+			features: Vec::new(),
+		}
+	}
+
+	pub fn feature(&mut self, feature: impl Into<String>) -> &mut Self {
+		self.features.push(feature.into());
+		self
+	}
+
+	pub fn build(self) {
+		build_opt(self);
+	}
+}
+impl Default for BuildOptions {
+	fn default() -> Self {
+		BuildOptions::new()
+	}
+}
+
 
 fn update_modified_file(target_dir: impl AsRef<Path>) -> io::Result<()> {
 	let mut modified_file = fs::File::create(target_dir.as_ref().join("invoked.timestamp"))?;
@@ -71,6 +96,10 @@ fn is_cargo_cmd_valid() -> bool {
 }
 
 pub fn build() {
+	build_opt(BuildOptions::default());
+}
+
+fn build_opt(opt: BuildOptions) {
 	if std::env::var_os("CUDA_MACROS_BUILD_SCRIPT").is_some() {
 		println!("cargo:rerun-if-env-changed=CUDA_MACROS_BUILD_TIMESTAMP");
 		// Detected recursion: exit
@@ -158,6 +187,9 @@ pub fn build() {
 				features.push(feature)
 			}
 		}
+	}
+	for f in &opt.features {
+		features.push(f.clone());
 	}
 	if features.len() > 0 {
 		command.arg("--features");
