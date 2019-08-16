@@ -537,11 +537,13 @@ impl<T> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if there is a CUDA error while performing the operation.
-	pub fn into_vec(self) -> Vec<T> {
+	pub fn into_vec(mut self) -> Vec<T> {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
 			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
 			v.set_len(self.len());
+			// Set length to 0 to avoid double-freeing
+			self.set_len(0);
 		}
 		v
 	}
@@ -1066,5 +1068,15 @@ mod tests {
 		assert_eq!((&data[..=2]).copy_to_vec(), &[1, 2, 3]);
 		assert_eq!((&data[1..=2]).copy_to_vec(), &[2, 3]);
 		assert_eq!((&(&data[1..4])[1..2]).copy_to_vec(), &[3]);
+	}
+	
+	#[test]
+	pub fn test_into_vec() {
+		let data = vec![vec![1, 2, 3], vec![3, 4, 5]];
+		
+		// Note that `v` is a GPU vector of CPU vectors. The CPU vectors still need to be
+		// moved to the CPU to be accessed.
+		let v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
+		assert_eq!(v.into_vec(), data);
 	}
 }
