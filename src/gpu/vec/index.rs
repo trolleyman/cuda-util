@@ -37,24 +37,24 @@ pub trait GpuSliceRange<T> {
 impl<T> GpuSliceRange<T> for ops::Range<usize> {
 	fn index<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		match assert_range_valid_msg(self, slice) {
-			Ok(()) => unsafe { GpuSlice::from_raw_parts(slice.as_ptr(), self.end - self.start) },
+			Ok(()) => unsafe { GpuSlice::from_raw_parts(slice.as_ptr().add(self.start), self.end - self.start) },
 			Err(e) => panic!(e),
 		}
 	}
 	fn index_mut<'a>(&'_ self, slice: &'a mut GpuSlice<T>) -> &'a mut GpuSlice<T> {
 		match assert_range_valid_msg(self, slice) {
-			Ok(()) => unsafe { GpuSlice::from_raw_parts_mut(slice.as_mut_ptr(), self.end - self.start) },
+			Ok(()) => unsafe { GpuSlice::from_raw_parts_mut(slice.as_mut_ptr().add(self.start), self.end - self.start) },
 			Err(e) => panic!(e),
 		}
 	}
 
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> Option<&'a GpuSlice<T>> {
 		assert_range_valid(self, slice).ok()?;
-		Some(unsafe { GpuSlice::from_raw_parts(slice.as_ptr(), self.end - self.start) })
+		Some(unsafe { GpuSlice::from_raw_parts(slice.as_ptr().add(self.start), self.end - self.start) })
 	}
 	fn slice_mut<'a>(&'_ self, slice: &'a mut GpuSlice<T>) -> Option<&'a mut GpuSlice<T>> {
 		assert_range_valid(self, slice).ok()?;
-		Some(unsafe { GpuSlice::from_raw_parts_mut(slice.as_mut_ptr(), self.end - self.start) })
+		Some(unsafe { GpuSlice::from_raw_parts_mut(slice.as_mut_ptr().add(self.start), self.end - self.start) })
 	}
 }
 impl<T> GpuSliceRange<T> for ops::RangeFrom<usize> {
