@@ -27,6 +27,7 @@ fn assert_range_valid<T>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> Resu
 	}
 }
 
+/// Helper trait to allow for slices to be taken easily.
 pub trait GpuSliceRange<T> {
 	fn index<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T>;
 	fn index_mut<'a>(&'_ self, slice: &'a mut GpuSlice<T>) -> &'a mut GpuSlice<T>;

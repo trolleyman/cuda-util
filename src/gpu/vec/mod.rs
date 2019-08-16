@@ -185,7 +185,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn copy_to_vec(&self) -> Vec<T> where T: Copy {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
@@ -200,7 +200,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn clone_to_vec(&self) -> Vec<T> where T: Clone {
 		let mut v: Vec<ManuallyDrop<T>> = Vec::with_capacity(self.len());
 		let mut ret: Vec<T> = Vec::with_capacity(self.len());
@@ -218,6 +218,9 @@ impl<T> GpuSlice<T> {
 
 	/// Copies the data in the slice to a new `GpuVec`.
 	/// 
+	/// # Panics
+	/// Panics if there is a CUDA error while performing the operation.
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::*;
@@ -225,9 +228,6 @@ impl<T> GpuSlice<T> {
 	/// let b: GpuVec<_> = (&a[1..]).copy_to_gpu_vec();
 	/// assert_eq!(b.into_vec(), &[2, 3, 4]);
 	/// ```
-	/// 
-	/// # Panics
-	/// If there is a CUDA error while performing the operation.
 	pub fn copy_to_gpu_vec(&self) -> GpuVec<T> where T: Copy {
 		let mut v = GpuVec::with_capacity(self.len());
 		unsafe {
@@ -252,7 +252,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn first<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -268,7 +268,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn first_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -284,7 +284,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn last<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -300,7 +300,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn last_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -337,6 +337,10 @@ impl<T> GpuSlice<T> {
 
 	/// Swaps two elements in the slice.
 	/// 
+	/// # Panics
+	/// Panics if `a` or `b` are out of bounds,
+	/// or if there is a CUDA error while performing the operation.
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::*;
@@ -344,10 +348,6 @@ impl<T> GpuSlice<T> {
 	/// v.swap(0, 1);
 	/// assert_eq!(v.copy_to_vec(), &[2, 1, 3]);
 	/// ```
-	/// 
-	/// # Panics
-	/// - If there is a CUDA error while performing the operation.
-	/// - If `a` or `b` are out of bounds.
 	pub fn swap(&mut self, a: usize, b: usize) {
 		if a >= self.len() {
 			panic!("a is out of bounds");
@@ -457,7 +457,7 @@ impl<T> GpuVec<T> {
 	/// `ptr` is freed when the `GpuVec` is dropped.
 	/// 
 	/// # Panics
-	/// If `len > capacity`
+	/// Panics if `len > capacity`
 	pub unsafe fn from_raw_parts(ptr: *mut T, len: usize, capacity: usize) -> Self {
 		if len > capacity {
 			panic!("len > capacity");
@@ -472,15 +472,15 @@ impl<T> GpuVec<T> {
 
 	/// Try to create a `GpuVec<T>` from a slice of data on the CPU.
 	/// 
+	/// # Panics
+	/// Panics if `len` overflows
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
 	/// let mut v = GpuVec::try_from_slice(&[1, 2, 3][..]).expect("CUDA error");
 	/// assert_eq!(v.copy_to_vec(), &[1, 2, 3]);
 	/// ```
-	/// 
-	/// # Panics
-	/// If `len` overflows
 	pub fn try_from_slice(data: &[T]) -> CudaResult<Self> where T: Copy {
 		let len = data.len();
 		let len_bytes = len.checked_mul(size_of::<T>()).expect("overflow");
@@ -507,18 +507,19 @@ impl<T> GpuVec<T> {
 
 	/// Tries to moves a vector of values from host to device storage.
 	/// 
+	/// # Panics
+	/// Panics if `len` overflows
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
 	/// let data = vec![vec![1, 2, 3], vec![3, 4, 5]];
-	/// // Note that `v` is a GPU vector or CPU vectors. The CPU vectors still need to be
-	/// // moved to the  CPU to be accessed.
+	/// 
+	/// // Note that `v` is a GPU vector of CPU vectors. The CPU vectors still need to be
+	/// // moved to the CPU to be accessed.
 	/// let mut v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
 	/// assert_eq!(v.into_vec(), data);
 	/// ```
-	/// 
-	/// # Panics
-	/// If `len` overflows
 	pub fn try_from_vec(data: Vec<T>) -> CudaResult<Self> {
 		let mut v = GpuVec::with_capacity(data.len());
 		unsafe {
@@ -535,7 +536,7 @@ impl<T> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn into_vec(self) -> Vec<T> {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
@@ -555,9 +556,10 @@ impl<T> GpuVec<T> {
 	/// New capacity can be more than or equal to `len + additional`.
 	/// 
 	/// # Panics
-	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// Panics if `len + additional` overflows,
+	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// 
 	/// See [`try_reserve()`](#method.try_reserve).
-	/// - If `len + additional` overflows an `isize`.
 	pub fn reserve(&mut self, additional: usize) {
 		self.try_reserve(additional).expect("CUDA error")
 	}
@@ -569,9 +571,10 @@ impl<T> GpuVec<T> {
 	/// New capacity is otherwise equal to `len + additional`.
 	/// 
 	/// # Panics
-	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// See [`try_reserve_exact()`](#method.try_reserve_exact).
-	/// - If `len + additional` overflows an `isize`.
+	/// Panics if `len + additional` overflows,
+	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// 
+	/// See [`try_reserve()`](#method.try_reserve).
 	pub fn reserve_exact(&mut self, additional: usize) {
 		self.try_reserve_exact(additional).expect("CUDA error")
 	}
@@ -581,7 +584,7 @@ impl<T> GpuVec<T> {
 	/// New capacity can be more than or equal to `len + additional`.
 	/// 
 	/// # Panics
-	/// If `len + additional` overflows an `isize`.
+	/// Panics if `len + additional` overflows.
 	pub fn try_reserve(&mut self, additional: usize) -> CudaResult<()> {
 		let mut new_capacity = self.len.checked_add(additional).expect("overflow");
 		Self::assert_capacity_valid(new_capacity);
@@ -602,7 +605,7 @@ impl<T> GpuVec<T> {
 	/// New capacity is otherwise equal to `len + additional`.
 	/// 
 	/// # Panics
-	/// If `len + additional` overflows an `isize`.
+	/// Panics if `len + additional` overflows.
 	pub fn try_reserve_exact(&mut self, additional: usize) -> CudaResult<()> {
 		let new_capacity = self.len.checked_add(additional).expect("overflow");
 		Self::assert_capacity_valid(new_capacity);
@@ -618,7 +621,7 @@ impl<T> GpuVec<T> {
 	/// Removes all excess capacity of the vector
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while reallocating the vector.
+	/// Panics if there is a CUDA error while reallocating the vector.
 	pub fn shrink_to_fit(&mut self) {
 		if self.capacity > self.len {
 			unsafe {
@@ -659,7 +662,7 @@ impl<T> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// If there is a CUDA error while performing the operation.
+	/// Panics if there is a CUDA error while performing the operation.
 	pub fn swap_remove(&mut self, index: usize) -> T {
 		let index_ptr = self.ptr.wrapping_offset(index as isize);
 		let end_ptr = self.ptr.wrapping_offset(self.len as isize - 1);
@@ -681,9 +684,10 @@ impl<T> GpuVec<T> {
 	/// Currently this is a relatively slow operation as currently it requires copying the entire vector into a new one.
 	/// 
 	/// # Panics
-	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// - If `index` is out of bounds.
-	/// - If adding an element to the vector would make the capacity overflow.
+	/// Panics if `index` is out of bounds,
+	/// or if adding an element to the vector would make the capacity overflow.
+	/// 
+	/// Also panics if there is a CUDA error while performing the operation (the most common being an out of memory error).
 	pub fn insert(&mut self, index: usize, element: T) {
 		// TODO: Make more efficient somehow by using CUDA kernels
 		if index > self.len {
@@ -718,6 +722,10 @@ impl<T> GpuVec<T> {
 	/// Currently this is a relatively slow operation as currently it requires copying the elements after `index`
 	/// into a new vector.
 	/// 
+	/// # Panics
+	/// Panics if `index` is out of bounds,
+	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
@@ -725,10 +733,6 @@ impl<T> GpuVec<T> {
 	/// assert_eq!(v.remove(1), 2);
 	/// assert_eq!(&v.copy_to_vec(), &[1, 3]);
 	/// ```
-	/// 
-	/// # Panics
-	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// - If `index` is out of bounds.
 	pub fn remove(&mut self, index: usize) -> T {
 		// TODO: Make more efficient somehow by using CUDA kernels
 		if index >= self.len {
@@ -761,6 +765,10 @@ impl<T> GpuVec<T> {
 	/// 
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
+	/// # Panics
+	/// Panics if adding an element to the vector would make the capacity overflow,
+	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
@@ -768,10 +776,6 @@ impl<T> GpuVec<T> {
 	/// v.push(4);
 	/// assert_eq!(&v.copy_to_vec(), &[1, 2, 3, 4]);
 	/// ```
-	/// 
-	/// # Panics
-	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// - If adding an element to the vector would make the capacity overflow.
 	pub fn push(&mut self, value: T) {
 		self.reserve(1);
 		unsafe {
@@ -785,6 +789,9 @@ impl<T> GpuVec<T> {
 	/// 
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
+	/// # Panics
+	/// Panics if there is a CUDA error while performing the operation
+	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
@@ -794,9 +801,6 @@ impl<T> GpuVec<T> {
 	/// assert_eq!(v.pop(), Some(1));
 	/// assert_eq!(v.pop(), None);
 	/// ```
-	/// 
-	/// # Panics
-	/// If there is a CUDA error while performing the operation
 	pub fn pop(&mut self) -> Option<T> {
 		if self.len == 0 {
 			None
@@ -812,8 +816,8 @@ impl<T> GpuVec<T> {
 	/// Appends the elements of another vector onto the end of this one.
 	/// 
 	///	# Panics
-	/// - If there is a CUDA error while performing the operation (the most common being an out of memory error).
-	/// - If adding the elements to this vector would make the capacity overflow.
+	/// Panics if there is a CUDA error while performing the operation (the most common being an out of memory error),
+	/// or if adding the elements to this vector would make the capacity overflow.
 	pub fn append(&mut self, other: &GpuSlice<T>) {
 		self.reserve(other.len());
 		unsafe {

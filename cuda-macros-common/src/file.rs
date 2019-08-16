@@ -1,3 +1,4 @@
+//! File input/output helper module
 
 use std::io::{self, Read, Write, Seek, SeekFrom};
 

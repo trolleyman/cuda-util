@@ -2,7 +2,7 @@
 use ndarray::prelude::*;
 use crate::*;
 
-pub mod func;
+pub(crate) mod func;
 mod vec;
 
 pub use vec::*;

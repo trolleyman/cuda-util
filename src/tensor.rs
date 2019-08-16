@@ -5,9 +5,9 @@ use crate::*;
 
 /// Set of operations that all `Tensor`s implement
 pub trait TensorTrait: Sized {
-	/// Element type (See [`CudaNumber`](trait.CudaNumber.html))
+	/// Element type
 	type Elem: CudaNumber;
-	/// Dimension type (See [`Dimension`](https://docs.rs/ndarray/0.12.1/ndarray/trait.Dimension.html))
+	/// Dimension type
 	type Dim: Dimension;
 
 	/// Constructs the `Tensor` from an `ndarray` array

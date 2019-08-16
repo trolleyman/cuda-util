@@ -2,6 +2,7 @@
 use cuda::runtime::CudaStream;
 use cuda::ffi::driver_types::cudaStream_t;
 
+/// Shorthand for constructing [`Dim3`](struct.Dim3.html)
 #[macro_export]
 macro_rules! dim3 {
 	() => ( $crate::Dim3::default() );

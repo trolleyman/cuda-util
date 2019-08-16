@@ -17,7 +17,7 @@ mod execution_config;
 mod cuda_number;
 
 pub use perms::*;
-pub use execution_config::ExecutionConfig;
+pub use execution_config::{Dim3, ExecutionConfig};
 pub use cuda_number::{CudaNumber, CudaNumberType};
 
 

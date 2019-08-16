@@ -1,3 +1,4 @@
+//! Functions used for outputting Rust objects to CUDA source and header files
 
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};

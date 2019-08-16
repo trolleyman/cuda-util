@@ -1,3 +1,4 @@
+//! Functions and types used to convert Rust types to C types
 
 use std::borrow::Cow;
 
