@@ -31,7 +31,7 @@ unsafe fn global_reverse_vector(vec: *mut u8, elem_size: u32, len: u32) {
 	let byte_shared_i: u32 = threadIdx.x * elem_size;
 
 	if i < len / 2 {
-		printf("%d,%d,%d - %d,%d,%d (/%d,%d,%d): %d <-> %d\n", threadIdx.x, threadIdx.y, threadIdx.z, blockIdx.x, blockIdx.y, blockIdx.z, blockDim.x, blockDim.y, blockDim.z, i, ri);
+		//printf("%d,%d,%d - %d,%d,%d (/%d,%d,%d): %d <-> %d\n", threadIdx.x, threadIdx.y, threadIdx.z, blockIdx.x, blockIdx.y, blockIdx.z, blockDim.x, blockDim.y, blockDim.z, i, ri);
 		for j in 0..elem_size {
 			tmp[byte_shared_i + j] = vec[byte_i + j];
 		}
