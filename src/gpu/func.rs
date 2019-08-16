@@ -43,3 +43,8 @@ unsafe fn global_reverse_vector(vec: *mut u8, elem_size: u32, len: u32) {
 		}
 	}
 }
+
+
+pub fn contains<T: Copy>(vec: *const T, len: usize) -> bool {
+	
+}

@@ -252,7 +252,7 @@ impl<T> GpuSlice<T> {
 	/// Note that this is *not* a valid pointer. This is a device pointer, that points to data on the GPU. It can only be used in CUDA functions that explicitly mention a requirement for a device pointer.
 	/// 
 	/// The caller is also responsible for the lifetime of the pointer.
-	pub fn as_ptr(&self) -> *const T {
+	pub const fn as_ptr(&self) -> *const T {
 		self.0.as_ptr()
 	}
 
@@ -312,6 +312,72 @@ impl<T> GpuSlice<T> {
 	pub fn reverse(&mut self) {
 		func::reverse_vector(self.as_mut_ptr(), self.len());
 	}
+
+	// TODO: iter(&self)
+	// TODO: iter_mut(&mut self)
+
+	// TODO: windows(&self, size: usize)
+
+	// TODO: chunks(&self, chunk_size: usize)
+	// TODO: chunks_mut(&mut self, chunk_size: usize)
+	// TODO: chunks_exact(&self, chunk_size: usize)
+	// TODO: chunks_exact_mut(&mut self, chunk_size: usize)
+
+	// TODO: rchunks(&self, chunk_size: usize)
+	// TODO: rchunks_mut(&mut self, chunk_size: usize)
+	// TODO: rchunks_exact(&self, chunk_size: usize)
+	// TODO: rchunks_exact_mut(&mut self, chunk_size: usize)
+
+	// TODO: split_at(&self, mid: usize) -> (&GpuSlice<T>, &GpuSlice<T>)
+	// TODO: split_at_mut(&self, mid: usize) -> (&mut GpuSlice<T>, &mut GpuSlice<T>)
+
+	// TODO: split, split_mut, rsplit, rsplit_mut, splitn, splitn_mut, rsplitn, rsplitn_mut
+
+	/// Returns `true` if the slice contains an element with a given value.
+	/// 
+	/// **Note:** This doesn't call `x.partial_eq()`, it is purely done through byte-equality.
+	pub fn contains(&self, x: &T) -> bool where T: Copy {
+		func::contains(self.as_ptr(), self.len())
+	}
+
+	/// Returns `true` if `needle` is a prefix of the slice.
+	/// 
+	/// **Note:** This doesn't call `x.partial_eq()`, it is purely done through byte-equality.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::GpuVec;
+	/// let v = GpuVec::from(vec![1, 2, 3, 4, 5]);
+	/// assert!(v.starts_with(&GpuVec::from(vec![1, 2, 3])));
+	/// assert!(!v.starts_with(&GpuVec::from(vec![1, 4, 5])));
+	/// ```
+	pub fn starts_with(&self, needle: &GpuSlice<T>) -> bool where T: Copy {
+		if self.len() < needle.len() {
+			false
+		} else {
+			&self[..needle.len()] == needle
+		}
+	}
+
+	/// Returns `true` if `needle` is a suffix of the slice
+	/// 
+	/// **Note:** This doesn't call `x.partial_eq()`, it is purely done through byte-equality.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::GpuVec;
+	/// let v = GpuVec::from(vec![1, 2, 3, 4, 5]);
+	/// assert!(v.ends_with(&GpuVec::from(vec![4, 5])));
+	/// assert!(!v.ends_with(&GpuVec::from(vec![1, 4, 5])));
+	/// ```
+	pub fn ends_with(&self, needle: &GpuSlice<T>) -> bool where T: Copy {
+		if self.len() < needle.len() {
+			false
+		} else {
+			&self[self.len() - needle.len()..] == needle
+		}
+	}
+
 
 	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below reverse()
 }
