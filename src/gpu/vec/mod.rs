@@ -195,14 +195,35 @@ impl<T> GpuSlice<T> {
 		v
 	}
 
+	/// Clones the data in the slice to the CPU and returns it as a `Vec`.
+	/// 
+	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
+	/// 
+	/// # Panics
+	/// If there is a CUDA error while performing the operation.
+	pub fn clone_to_vec(&self) -> Vec<T> where T: Clone {
+		let mut v: Vec<ManuallyDrop<T>> = Vec::with_capacity(self.len());
+		let mut ret: Vec<T> = Vec::with_capacity(self.len());
+		unsafe {
+			// Copy to `v`
+			cuda_memcpy(v.as_mut_ptr() as *mut T, self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
+			v.set_len(self.len());
+		}
+		// Call `clone()` on each element in `v`
+		for elem in &v {
+			ret.push(elem.deref().clone());
+		}
+		ret
+	}
+
 	/// Copies the data in the slice to a new `GpuVec`.
 	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::*;
 	/// let a = GpuVec::from(&[1, 2, 3, 4][..]);
-	/// let b: GpuVec<_> = &a[1..].to_gpu_vec();
-	/// assert_eq!(b.to_vec(), &[2, 3, 4]);
+	/// let b: GpuVec<_> = (&a[1..]).copy_to_gpu_vec();
+	/// assert_eq!(b.into_vec(), &[2, 3, 4]);
 	/// ```
 	/// 
 	/// # Panics
@@ -321,7 +342,7 @@ impl<T> GpuSlice<T> {
 	/// # use cuda_util::*;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// v.swap(0, 1);
-	/// assert_eq!(v.to_vec(), &[2, 1, 3]);
+	/// assert_eq!(v.copy_to_vec(), &[2, 1, 3]);
 	/// ```
 	/// 
 	/// # Panics
@@ -354,7 +375,7 @@ impl<T> GpuSlice<T> {
 	/// let mut v = GpuVec::from(&cpu_vec[..]);
 	/// v.reverse();
 	/// cpu_vec.reverse();
-	/// assert_eq!(&v.to_vec(), &cpu_vec);
+	/// assert_eq!(&v.copy_to_vec(), &cpu_vec);
 	/// ```
 	pub fn reverse(&mut self) {
 		func::reverse_vector(self.as_mut_ptr(), self.len());
@@ -362,12 +383,26 @@ impl<T> GpuSlice<T> {
 
 	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below reverse()
 }
+
 impl<T> fmt::Debug for GpuSlice<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		write!(f, "GpuSlice([<{:p}>; {}])", self.as_ptr(), self.len())?;
 		Ok(())
 	}
 }
+
+impl<T, I: GpuSliceRange<T>> ops::Index<I> for GpuSlice<T> {
+	type Output = GpuSlice<T>;
+	fn index(&self, index: I) -> &GpuSlice<T> {
+		index.index(self)
+	}
+}
+impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuSlice<T> {
+	fn index_mut(&mut self, index: I) -> &mut GpuSlice<T> {
+		index.index_mut(self)
+	}
+}
+
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
 /// Contiguous growable array type, similar to `Vec<T>` but stored on the GPU.
@@ -441,7 +476,7 @@ impl<T> GpuVec<T> {
 	/// ```
 	/// # use cuda_util::GpuVec;
 	/// let mut v = GpuVec::try_from_slice(&[1, 2, 3][..]).expect("CUDA error");
-	/// assert_eq!(v.to_vec(), &[1, 2, 3]);
+	/// assert_eq!(v.copy_to_vec(), &[1, 2, 3]);
 	/// ```
 	/// 
 	/// # Panics
@@ -479,7 +514,7 @@ impl<T> GpuVec<T> {
 	/// // Note that `v` is a GPU vector or CPU vectors. The CPU vectors still need to be
 	/// // moved to the  CPU to be accessed.
 	/// let mut v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
-	/// assert_eq!(v.to_vec(), data);
+	/// assert_eq!(v.into_vec(), data);
 	/// ```
 	/// 
 	/// # Panics
@@ -688,7 +723,7 @@ impl<T> GpuVec<T> {
 	/// # use cuda_util::GpuVec;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// assert_eq!(v.remove(1), 2);
-	/// assert_eq!(&v.to_vec(), &[1, 3]);
+	/// assert_eq!(&v.copy_to_vec(), &[1, 3]);
 	/// ```
 	/// 
 	/// # Panics
@@ -731,7 +766,7 @@ impl<T> GpuVec<T> {
 	/// # use cuda_util::GpuVec;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// v.push(4);
-	/// assert_eq!(&v.to_vec(), &[1, 2, 3, 4]);
+	/// assert_eq!(&v.copy_to_vec(), &[1, 2, 3, 4]);
 	/// ```
 	/// 
 	/// # Panics
@@ -809,11 +844,20 @@ impl<T> GpuVec<T> {
 		}
 	}
 }
+
 impl<T: Copy> From<&[T]> for GpuVec<T> {
 	fn from(data: &[T]) -> Self {
 		Self::try_from_slice(data).expect("CUDA error")
 	}
 }
+
+// TODO
+// impl<T: Copy + Clone> From<&[T]> for GpuVec<T> {
+// 	fn from(data: &[T]) -> Self {
+// 		Self::try_from_slice(data).expect("CUDA error")
+// 	}
+// }
+
 impl<T> From<Vec<T>> for GpuVec<T> {
 	fn from(data: Vec<T>) -> Self {
 		Self::try_from_vec(data).expect("CUDA error")
@@ -840,13 +884,54 @@ impl<T> DerefMut for GpuVec<T> {
 	}
 }
 
-impl<T> Clone for GpuVec<T> {
+impl<T: Clone> Clone for GpuVec<T> {
 	fn clone(&self) -> Self {
-		unsafe {
-			let mut v = Self::with_capacity(self.len());
-			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
-			v.set_len(self.len());
-			v
+		if <T as HasCopy>::has_copy() {
+			// Copy the raw bytes from one to another
+			unsafe {
+				let mut v = Self::with_capacity(self.len());
+				cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+				v.set_len(self.len());
+				v
+			}
+		} else {
+			// Copy GpuVec to CPU
+			let mut v: Vec<ManuallyDrop<T>> = Vec::with_capacity(self.len());
+			unsafe {
+				cuda_memcpy(v.as_mut_ptr() as *mut T, self.as_ptr() as *const T, self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
+				v.set_len(self.len());
+			}
+			// Call `clone()` on every element
+			let mut ret: Vec<T> = Vec::with_capacity(self.len());
+			for elem in &v {
+				ret.push(elem.deref().clone());
+			}
+			// Move to device
+			Self::from(ret)
+		}
+	}
+}
+trait HasCopy {
+	fn has_copy() -> bool;
+}
+cfg_if! {
+	if #[cfg(feature="unstable")] {
+		impl<T> HasCopy for T {
+			default fn has_copy() -> bool {
+				false
+			}
+		}
+		impl<T> HasCopy for T where T: Copy {
+			fn has_copy() -> bool {
+				true
+			}
+		}
+	} else {
+		// Specialization is not enabled -- no way to tell if there is a `Copy` impl on `T`, so assume no types have it
+		impl<T> HasCopy for T {
+			fn has_copy() -> bool {
+				false
+			}
 		}
 	}
 }
@@ -871,9 +956,8 @@ impl<T> Drop for GpuVec<T> {
 trait HasDrop {
 	fn has_drop() -> bool;
 }
-
 cfg_if! {
-	if #[cfg(feature="specialization")] {
+	if #[cfg(feature="unstable")] {
 		impl<T> HasDrop for T {
 			default fn has_drop() -> bool {
 				false
@@ -941,3 +1025,42 @@ impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuVec<T> {
 
 
 // TODO: Vec ops: https://doc.rust-lang.org/std/vec/struct.Vec.html
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	
+	#[derive(Debug, Clone, PartialEq, Eq)]
+	pub struct DropThing<T: std::fmt::Debug + Clone + std::cmp::PartialEq + std::cmp::Eq>(T);
+	impl<T> Drop for DropThing<T> where T: std::fmt::Debug + Clone + std::cmp::PartialEq + std::cmp::Eq {
+		fn drop(&mut self) {
+			println!("Dropping thing: {:?}", self.0);
+		}
+	}
+	
+	#[test]
+	pub fn test_vec() {
+		let data = vec![DropThing(1), DropThing(2), DropThing(3)];
+		println!("a");
+		let v = GpuVec::from(data.clone());
+		println!("b");
+		let v = v.into_vec();
+		println!("c");
+		assert_eq!(v, data);
+		println!("d");
+	}
+	
+	#[test]
+	pub fn test_slice() {
+		let data: GpuVec<_> = vec![1, 2, 3, 4, 5].into();
+		assert_eq!((&data[..]).copy_to_vec(), &[1, 2, 3, 4, 5]);
+		assert_eq!((&data[0..]).copy_to_vec(), &[1, 2, 3, 4, 5]);
+		assert_eq!((&data[1..]).copy_to_vec(), &[2, 3, 4, 5]);
+		assert_eq!((&data[..4]).copy_to_vec(), &[1, 2, 3, 4]);
+		assert_eq!((&data[..5]).copy_to_vec(), &[1, 2, 3, 4, 5]);
+		assert_eq!((&data[1..2]).copy_to_vec(), &[2]);
+		assert_eq!((&data[..=2]).copy_to_vec(), &[1, 2, 3]);
+		assert_eq!((&data[1..=2]).copy_to_vec(), &[2, 3]);
+		assert_eq!((&(&data[1..4])[1..2]).copy_to_vec(), &[3]);
+	}
+}
