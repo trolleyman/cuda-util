@@ -6,7 +6,7 @@ edition = "2018"
 build = "build.rs"
 
 [features]
-specialization = []
+unstable = []
 cuda_6_5  = ["cuda/cuda_6_5" , "cuda-macros/cuda_6_5" , "cuda-macros-build/cuda_6_5" ]
 cuda_7_0  = ["cuda/cuda_7_0" , "cuda-macros/cuda_7_0" , "cuda-macros-build/cuda_7_0" ]
 cuda_7_5  = ["cuda/cuda_7_5" , "cuda-macros/cuda_7_5" , "cuda-macros-build/cuda_7_5" ]
