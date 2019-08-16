@@ -44,7 +44,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn copy_to_vec(&self) -> Vec<T> where T: Copy {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
@@ -59,7 +59,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn clone_to_vec(&self) -> Vec<T> where T: Clone {
 		let mut v: Vec<ManuallyDrop<T>> = Vec::with_capacity(self.len());
 		let mut ret: Vec<T> = Vec::with_capacity(self.len());
@@ -78,7 +78,7 @@ impl<T> GpuSlice<T> {
 	/// Copies the data in the slice to a new `GpuVec`.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	/// 
 	/// # Examples
 	/// ```
@@ -111,7 +111,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn first<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -127,7 +127,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn first_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -143,7 +143,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn last<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -159,7 +159,7 @@ impl<T> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn last_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -170,8 +170,59 @@ impl<T> GpuSlice<T> {
 		}
 	}
 
-	//pub fn get()
-	//pub fn get_mut()
+	/// Returns a reference to the element at position `index`, or `None` if out of bounds.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::GpuVec;
+	/// let mut v = GpuVec::from(&[1, 2, 100, 4, 5][..]);
+	/// assert_eq!(v.get(2).unwrap(), 100);
+	/// ```
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error is encountered while performing this operation. See [`try_get()`](#method.try_get).
+	pub fn get<'a>(&'a self, index: usize) -> Option<GpuRef<'a, T>> {
+		self.try_get(index).expect("CUDA error")
+	}
+
+	/// Returns a mutable reference to the element at position `index`, or `None` if out of bounds.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::GpuVec;
+	/// let mut v = GpuVec::from(&[1, 2, 3, 4, 5][..]);
+	/// {
+	/// 	let ref = v.get_mut(2).unwrap()
+	/// 	*ref = 100;
+	/// }
+	/// assert_eq!(v.copy_to_vec(), &[1, 2, 100, 4, 5]);
+	/// ```
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error is encountered while performing this operation. See [`try_get_mut()`](#method.try_get_mut).
+	pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<GpuMutRef<'a, T>> {
+		self.try_get_mut(index).expect("CUDA error")
+	}
+
+	/// Returns a reference to the element at position `index`, `Ok(None)` if out of bounds,
+	/// or `Err` if a CUDA error was encountered while performing this operation.
+	pub fn try_get<'a>(&'a self, index: usize) -> CudaResult<Option<GpuRef<'a, T>>> {
+		if index < self.len() {
+			unsafe { Ok(Some(GpuRef::from_device_ptr(self.as_ptr().add(index))?)) }
+		} else {
+			Ok(None)
+		}
+	}
+
+	/// Returns a mutable reference to the element at position `index`, `Ok(None)` if out of bounds,
+	/// or `Err` if a CUDA error was encountered while performing this operation.
+	pub fn try_get_mut<'a>(&'a mut self, index: usize) -> CudaResult<Option<GpuMutRef<'a, T>>> {
+		if index < self.len() {
+			unsafe { Ok(Some(GpuMutRef::from_device_ptr(self.as_mut_ptr().add(index))?)) }
+		} else {
+			Ok(None)
+		}
+	}
 
 	/// Returns a raw pointer to the device buffer.
 	/// 
@@ -198,7 +249,7 @@ impl<T> GpuSlice<T> {
 	/// 
 	/// # Panics
 	/// Panics if `a` or `b` are out of bounds,
-	/// or if there is a CUDA error while performing the operation.
+	/// or if a CUDA error is encountered while performing this operation.
 	/// 
 	/// # Examples
 	/// ```
@@ -252,12 +303,12 @@ impl<T> fmt::Debug for GpuSlice<T> {
 impl<T, I: GpuSliceRange<T>> ops::Index<I> for GpuSlice<T> {
 	type Output = GpuSlice<T>;
 	fn index(&self, index: I) -> &GpuSlice<T> {
-		index.index(self)
+		index.slice(self)
 	}
 }
 impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuSlice<T> {
 	fn index_mut(&mut self, index: I) -> &mut GpuSlice<T> {
-		index.index_mut(self)
+		index.slice_mut(self)
 	}
 }
 
@@ -328,6 +379,21 @@ impl<T> GpuVec<T> {
 		}
 	}
 
+	/// Consumes the `GpuVec`, returning the raw pointer, length and capacity.
+	/// 
+	/// After calling this function, the caller is responsible for cleaning up the memory
+	/// previously managed by the `GpuVec`. They are also responsible for calling the destructors
+	/// on each `T` when they go out of scope.
+	pub unsafe fn into_raw_parts(mut self) -> (*mut T, usize, usize) {
+		let len = self.len();
+		let capacity = self.capacity();
+		let ptr = self.as_mut_ptr();
+		self.ptr = ::std::ptr::null_mut();
+		self.len = 0;
+		self.capacity = 0;
+		(ptr, len, capacity)
+	}
+
 	/// Try to create a `GpuVec<T>` from a slice of data on the CPU.
 	/// 
 	/// # Panics
@@ -394,7 +460,7 @@ impl<T> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn into_vec(mut self) -> Vec<T> {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
@@ -417,7 +483,7 @@ impl<T> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if `len + additional` overflows,
-	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
 	/// 
 	/// See [`try_reserve()`](#method.try_reserve).
 	pub fn reserve(&mut self, additional: usize) {
@@ -432,7 +498,7 @@ impl<T> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if `len + additional` overflows,
-	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
 	/// 
 	/// See [`try_reserve()`](#method.try_reserve).
 	pub fn reserve_exact(&mut self, additional: usize) {
@@ -522,7 +588,7 @@ impl<T> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation.
+	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn swap_remove(&mut self, index: usize) -> T {
 		let index_ptr = self.ptr.wrapping_offset(index as isize);
 		let end_ptr = self.ptr.wrapping_offset(self.len as isize - 1);
@@ -547,7 +613,7 @@ impl<T> GpuVec<T> {
 	/// Panics if `index` is out of bounds,
 	/// or if adding an element to the vector would make the capacity overflow.
 	/// 
-	/// Also panics if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// Also panics if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
 	pub fn insert(&mut self, index: usize, element: T) {
 		// TODO: Make more efficient somehow by using CUDA kernels
 		if index > self.len {
@@ -584,7 +650,7 @@ impl<T> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if `index` is out of bounds,
-	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
 	/// 
 	/// # Examples
 	/// ```
@@ -627,7 +693,7 @@ impl<T> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if adding an element to the vector would make the capacity overflow,
-	/// or if there is a CUDA error while performing the operation (the most common being an out of memory error).
+	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
 	/// 
 	/// # Examples
 	/// ```
@@ -650,7 +716,7 @@ impl<T> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if there is a CUDA error while performing the operation
+	/// Panics if a CUDA error is encountered while performing this operation
 	/// 
 	/// # Examples
 	/// ```
@@ -676,7 +742,7 @@ impl<T> GpuVec<T> {
 	/// Appends the elements of another vector onto the end of this one.
 	/// 
 	///	# Panics
-	/// Panics if there is a CUDA error while performing the operation (the most common being an out of memory error),
+	/// Panics if a CUDA error is encountered while performing this operation (the most common being an out of memory error),
 	/// or if adding the elements to this vector would make the capacity overflow.
 	pub fn append(&mut self, other: &GpuSlice<T>) {
 		self.reserve(other.len());
@@ -876,12 +942,12 @@ impl<T> AsMut<GpuVec<T>> for GpuVec<T> {
 impl<T, I: GpuSliceRange<T>> ops::Index<I> for GpuVec<T> {
 	type Output = GpuSlice<T>;
 	fn index(&self, index: I) -> &GpuSlice<T> {
-		index.index(self)
+		index.slice(self)
 	}
 }
 impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuVec<T> {
 	fn index_mut(&mut self, index: I) -> &mut GpuSlice<T> {
-		index.index_mut(self)
+		index.slice_mut(self)
 	}
 }
 

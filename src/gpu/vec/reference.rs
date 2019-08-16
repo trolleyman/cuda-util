@@ -1,9 +1,11 @@
 
 use std::marker::PhantomData;
-use std::ops::{self, Deref, DerefMut};
-use std::mem::{ManuallyDrop, MaybeUninit, size_of};
+use std::ops::{Deref, DerefMut};
+use std::mem::ManuallyDrop;
 use std::fmt;
 use std::convert::{AsRef, AsMut};
+
+use crate::rcuda::*;
 
 
 /// Reference to a device location
@@ -54,7 +56,7 @@ impl<'a, T> AsRef<T> for GpuRef<'a, T> {
 	}
 }
 
-impl<'a, T> fmt::Debug<T> for GpuRef<'a, T> {
+impl<'a, T> fmt::Debug for GpuRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		writeln!(f, "GpuRef(<{:p}>)", self.ptr)
 	}
@@ -152,7 +154,7 @@ impl<'a, T> AsMut<T> for GpuMutRef<'a, T> {
 	}
 }
 
-impl<'a, T> fmt::Debug<T> for GpuMutRef<'a, T> {
+impl<'a, T> fmt::Debug for GpuMutRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		writeln!(f, "GpuMutRef(<{:p}>)", self.ptr)
 	}
