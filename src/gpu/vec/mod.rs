@@ -54,6 +54,28 @@ impl<T> GpuSlice<T> {
 		v
 	}
 
+	/// Copies the data in the slice to the CPU and returns it as a `GpuSliceRef`.
+	/// The lifetime of this reference is linked to the lifetime of the `GpuSlice`.
+	/// 
+	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error is encountered while performing this operation.
+	pub fn borrow_as_cpu_slice<'a>(&'a self) -> GpuSliceRef<'a, T> {
+		GpuSliceRef::from_device_ptr(self.as_ptr(), self.len()).expect("CUDA error")
+	}
+
+	/// Copies the data in the slice to the CPU and returns it as a mutable `GpuSliceRef`.
+	/// The lifetime of this reference is linked to the lifetime of the `GpuSlice`.
+	/// 
+	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error is encountered while performing this operation.
+	pub fn borrow_as_cpu_slice_mut<'a>(&'a mut self) -> GpuSliceMutRef<'a, T> {
+		GpuSliceMutRef::from_device_ptr(self.as_mut_ptr(), self.len()).expect("CUDA error")
+	}
+
 	/// Clones the data in the slice to the CPU and returns it as a `Vec`.
 	/// 
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
