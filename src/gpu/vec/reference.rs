@@ -7,6 +7,7 @@ use std::convert::{AsRef, AsMut};
 
 use crate::rcuda::*;
 
+
 /// Reference to a slice of values held on the device, but cached on the host.
 pub struct GpuSliceRef<'a, T> {
 	_phantom: PhantomData<&'a T>,
@@ -66,6 +67,12 @@ impl<'a, T> AsRef<[T]> for GpuSliceRef<'a, T> {
 impl<'a, T> fmt::Debug for GpuSliceRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		writeln!(f, "GpuSliceRef([<{:p}>; {}])", self.ptr, self.len())
+	}
+}
+
+impl<'a, T> fmt::Pointer for GpuSliceRef<'a, T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		fmt::Pointer::fmt(&self.ptr, f)
 	}
 }
 
@@ -172,6 +179,12 @@ impl<'a, T> fmt::Debug for GpuSliceMutRef<'a, T> {
 	}
 }
 
+impl<'a, T> fmt::Pointer for GpuSliceMutRef<'a, T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		fmt::Pointer::fmt(&self.ptr, f)
+	}
+}
+
 impl<'a, T> Drop for GpuSliceMutRef<'a, T> {
 	/// Flushes the value to the device, panicing on CUDA errors.
 	fn drop(&mut self) {
@@ -242,6 +255,12 @@ impl<'a, T> AsRef<T> for GpuRef<'a, T> {
 impl<'a, T> fmt::Debug for GpuRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		writeln!(f, "GpuRef(<{:p}>)", self.ptr)
+	}
+}
+
+impl<'a, T> fmt::Pointer for GpuRef<'a, T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		fmt::Pointer::fmt(&self.ptr, f)
 	}
 }
 
@@ -350,6 +369,12 @@ impl<'a, T> AsMut<T> for GpuMutRef<'a, T> {
 impl<'a, T> fmt::Debug for GpuMutRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		writeln!(f, "GpuMutRef(<{:p}>)", self.ptr)
+	}
+}
+
+impl<'a, T> fmt::Pointer for GpuMutRef<'a, T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		fmt::Pointer::fmt(&self.ptr, f)
 	}
 }
 
