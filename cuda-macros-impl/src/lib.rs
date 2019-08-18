@@ -164,14 +164,12 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		cuda_macros_common::permutations(CudaNumberType::types(), fn_info.number_generics.len(), |tys| {
 			// Get correct ident name (e.g. compare_f32_u32 is from compare<T: CudaNumber, U: CudaNumber>(x: T, y: T) with f32 and u32 type args)
 			fn_ident_c.clone_from(&fn_ident_c_base);
-			for (i, ty) in tys.iter().enumerate() {
+			for ty in tys.iter() {
+				fn_ident_c.push_str("_");
 				fn_ident_c.push_str(ty.rust_name());
-				if i != tys.len() {
-					fn_ident_c.push_str("_");
-				}
 			}
 			let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
-			
+
 			// Instantiate generics in #args_decl
 			tys_extra.clear();
 			for (gen_ty_name, gen_ty) in fn_info.number_generics.iter().zip(tys.iter()) {
@@ -189,12 +187,13 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 			generics.extend(quote!{ < });
 		}
 		generics.extend(quote!{ #generics_params });
-		if let Some(gt_token) = &f.decl.generics.lt_token {
+		if let Some(gt_token) = &f.decl.generics.gt_token {
 			generics.extend(quote!{ #gt_token });
 		} else {
 			generics.extend(quote!{ > });
 		}
-
+		// let generics = quote!{ <#generics_params> };
+		
 		// where T: CudaNumber
 		let mut where_clause = TokenStream::new();
 		if let Some(clause) = f.decl.generics.where_clause {
@@ -208,6 +207,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 				#fn_ident_c(config, #args)
 			}
 		};
+		panic!("{}", wrapper_fn);
 
 		Ok(quote!{
 			#tokens

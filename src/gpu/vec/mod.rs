@@ -1,19 +1,21 @@
 
 use std::marker::PhantomData;
 use std::ops::{self, Deref, DerefMut};
+use std::cmp;
 use std::mem::{ManuallyDrop, MaybeUninit, size_of};
 use std::fmt;
 use std::convert::{AsRef, AsMut};
 
 use cfg_if::cfg_if;
 
+use crate::CudaNumber;
+use crate::rcuda::*;
+use super::func;
+
 mod index;
 pub use self::index::*;
 mod reference;
 pub use self::reference::*;
-
-use crate::rcuda::*;
-use super::func;
 
 
 /// Slice of [`GpuVec`](struct.GpuVec.html).
@@ -294,7 +296,7 @@ impl<T> GpuSlice<T> {
 			cuda_memcpy(tmp, a_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			cuda_memcpy(a_ptr, b_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			cuda_memcpy(b_ptr, tmp, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
-			cuda_free_device(tmp).expect("CUDA error");
+			cuda_free_device(&mut tmp).expect("CUDA error");
 		}
 	}
 
@@ -334,15 +336,11 @@ impl<T> GpuSlice<T> {
 	// TODO: split, split_mut, rsplit, rsplit_mut, splitn, splitn_mut, rsplitn, rsplitn_mut
 
 	/// Returns `true` if the slice contains an element with a given value.
-	/// 
-	/// **Note:** This doesn't call `x.partial_eq()`, it is purely done through byte-equality.
-	pub fn contains(&self, x: &T) -> bool where T: Copy {
-		func::contains(self.as_ptr(), self.len())
+	pub fn contains(&self, x: &T) -> bool where T: CudaNumber {
+		func::contains(*x, self.as_ptr(), self.len())
 	}
 
 	/// Returns `true` if `needle` is a prefix of the slice.
-	/// 
-	/// **Note:** This doesn't call `x.partial_eq()`, it is purely done through byte-equality.
 	/// 
 	/// # Examples
 	/// ```
@@ -351,7 +349,7 @@ impl<T> GpuSlice<T> {
 	/// assert!(v.starts_with(&GpuVec::from(vec![1, 2, 3])));
 	/// assert!(!v.starts_with(&GpuVec::from(vec![1, 4, 5])));
 	/// ```
-	pub fn starts_with(&self, needle: &GpuSlice<T>) -> bool where T: Copy {
+	pub fn starts_with(&self, needle: &GpuSlice<T>) -> bool where T: CudaNumber {
 		if self.len() < needle.len() {
 			false
 		} else {
@@ -361,8 +359,6 @@ impl<T> GpuSlice<T> {
 
 	/// Returns `true` if `needle` is a suffix of the slice
 	/// 
-	/// **Note:** This doesn't call `x.partial_eq()`, it is purely done through byte-equality.
-	/// 
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
@@ -370,7 +366,7 @@ impl<T> GpuSlice<T> {
 	/// assert!(v.ends_with(&GpuVec::from(vec![4, 5])));
 	/// assert!(!v.ends_with(&GpuVec::from(vec![1, 4, 5])));
 	/// ```
-	pub fn ends_with(&self, needle: &GpuSlice<T>) -> bool where T: Copy {
+	pub fn ends_with(&self, needle: &GpuSlice<T>) -> bool where T: CudaNumber {
 		if self.len() < needle.len() {
 			false
 		} else {
@@ -399,6 +395,15 @@ impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuSlice<T> {
 		index.slice_mut(self)
 	}
 }
+impl<T> cmp::PartialEq<GpuSlice<T>> for GpuSlice<T> where T: CudaNumber {
+	fn eq(&self, other: &GpuSlice<T>) -> bool {
+		unsafe { func::eq(self.as_ptr(), self.len(), other.as_ptr(), other.len()) }
+	}
+	fn ne(&self, other: &GpuSlice<T>) -> bool {
+		unsafe { func::ne(self.as_ptr(), self.len(), other.as_ptr(), other.len()) }
+	}
+}
+impl<T> cmp::Eq for GpuSlice<T> where T: CudaNumber + cmp::Eq {}
 
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
@@ -727,7 +732,7 @@ impl<T> GpuVec<T> {
 			// Switch memory buffers
 			let old_ptr = self.ptr;
 			self.ptr = dst;
-			cuda_free_device(old_ptr).expect("CUDA error");
+			cuda_free_device(&mut old_ptr).expect("CUDA error");
 		}
 	}
 
@@ -840,7 +845,26 @@ impl<T> GpuVec<T> {
 		self.len += other.len();
 	}
 
-	// TODO: Everything in https://doc.rust-lang.org/std/vec/struct.Vec.html below append()
+	// TODO: drain
+
+	/// Remove all values in this vector.
+	///
+	/// This has no effect on the allocated capacity of the vector.
+	pub fn clear(&mut self) {
+		if <T as HasDrop>::has_drop() {
+			// `Drop` requires that the data is on the CPU
+			let mut vec = Vec::with_capacity(self.len());
+			unsafe {
+				if let Ok(_) = cuda_memcpy(vec.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost) {
+					vec.set_len(self.len());
+					self.len = 0;
+				}
+			}
+		}
+		self.len = 0;
+	}
+
+	// TODO: Everything in https://doc.rust-lang.org/std/vec/struct.Vec.html below clear()
 
 	/// Deallocates the memory held by the `GpuVec<T>`
 	pub fn free(self) -> CudaResult<()> {
@@ -857,8 +881,9 @@ impl<T> GpuVec<T> {
 		} else {
 			Ok(())
 		};
+		self.len = 0;
 		unsafe {
-			e.and(cuda_free_device(self.ptr))
+			e.and(cuda_free_device(&mut self.ptr))
 		}
 	}
 }
@@ -956,17 +981,9 @@ cfg_if! {
 
 impl<T> Drop for GpuVec<T> {
 	fn drop(&mut self) {
-		if <T as HasDrop>::has_drop() {
-			// `Drop` requires that the data is on the CPU
-			let mut vec = Vec::with_capacity(self.len());
-			unsafe {
-				if let Ok(_) = cuda_memcpy(vec.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost) {
-					vec.set_len(self.len())
-				}
-			}
-		}
+		self.clear();
 		unsafe {
-			cuda_free_device(self.ptr).ok();
+			cuda_free_device(&mut self.ptr).ok();
 		}
 	}
 }

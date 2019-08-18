@@ -18,9 +18,11 @@ pub unsafe fn cuda_alloc_device<T>(len: usize) -> CudaResult<*mut T> {
 }
 
 /// Frees device pointer
-pub unsafe fn cuda_free_device<T>(ptr: *mut T) -> CudaResult<()> {
-	if ptr != std::ptr::null_mut() {
-		rt::cuda_free_device(ptr as *mut u8)
+pub unsafe fn cuda_free_device<T>(ptr: &mut *mut T) -> CudaResult<()> {
+	let ptr_copy = *ptr;
+	*ptr = std::ptr::null_mut();
+	if ptr_copy != std::ptr::null_mut() {
+		rt::cuda_free_device(ptr_copy as *mut u8)
 	} else {
 		Ok(())
 	}
@@ -54,7 +56,7 @@ pub unsafe fn cuda_realloc<T>(ptr: &mut *mut T, old_len: usize, len: usize) -> C
 	// Swap buffers
 	mem::swap(ptr, &mut new_ptr);
 	// Free old buffer
-	cuda_free_device(new_ptr)
+	cuda_free_device(&mut new_ptr)
 }
 
 /// Copies a value from the device to the host, and returns it.

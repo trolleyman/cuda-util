@@ -2,6 +2,7 @@
 
 extern crate num;
 extern crate ndarray;
+extern crate lazy_static;
 
 extern crate cuda_macros;
 

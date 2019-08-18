@@ -1,21 +1,18 @@
 
+use lazy_static::lazy_static;
+
 use crate::*;
 
 
-fn div_ceil(x: usize, divisor: usize) -> usize {
-	x / divisor + (x % divisor != 0) as usize
+lazy_static!{
+	static ref TEMP_DEVICE_STORAGE: GpuVec<u8> = GpuVec::new();
 }
 
-pub fn reverse_vector<T>(vec: *mut T, len: usize) {
-	let num_threads_total = len / 2;
-	let num_threads_per_block = 1024;
-	let num_blocks = div_ceil(num_threads_total, num_threads_per_block);
-	let num_threads_per_block = if num_blocks == 1 { num_threads_total } else { num_threads_per_block };
+
+pub unsafe fn reverse_vector<T>(vec: *mut T, len: usize) {
 	let elem_size = std::mem::size_of::<T>();
-	unsafe {
-		let conf = ExecutionConfig::from((num_blocks as u32, num_threads_per_block as u32, num_threads_per_block * elem_size));
-		global_reverse_vector(conf, vec as *mut u8, elem_size as u32, len as u32);
-	}
+	let conf = ExecutionConfig::from_num_threads_with_shared_mem_per_thread(len as u32 / 2, elem_size);
+	global_reverse_vector(conf, vec as *mut u8, elem_size as u32, len as u32);
 }
 
 #[global]
@@ -44,7 +41,36 @@ unsafe fn global_reverse_vector(vec: *mut u8, elem_size: u32, len: u32) {
 	}
 }
 
+pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: CudaNumber {
+	TEMP_DEVICE_STORAGE.clear();
+	TEMP_DEVICE_STORAGE.push(0);
+	let conf = ExecutionConfig::from_num_threads(len as u32);
+	global_contains(conf, TEMP_DEVICE_STORAGE.as_mut_ptr() as *mut bool, x, vec, len);
+	*TEMP_DEVICE_STORAGE.get(0).unwrap() != 0
+}
 
-pub fn contains<T: Copy>(vec: *const T, len: usize) -> bool {
+#[global]
+pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: usize) where T: CudaNumber {
+	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
+	if (vec[i] == x) {
+		*found = true;
+	}
+}
+
+pub unsafe fn eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: CudaNumber {
+	unimplemented!()
+}
+
+#[global]
+pub unsafe fn global_eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: CudaNumber {
+	
+}
+
+pub unsafe fn ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: CudaNumber {
+	unimplemented!()
+}
+
+#[global]
+pub unsafe fn global_ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: CudaNumber {
 	
 }

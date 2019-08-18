@@ -87,6 +87,10 @@ impl From<[u32; 3]> for Dim3 {
 	}
 }
 
+fn div_ceil(x: usize, divisor: usize) -> usize {
+	x / divisor + (x % divisor != 0) as usize
+}
+
 /// CUDA execution configuration information.
 /// 
 /// Defines how to run a kernel, i.e. how many threads and blocks, how large shared memory is, and which stream to run the kernel on.
@@ -127,6 +131,29 @@ pub struct ExecutionConfig {
 	pub shared_mem_size: usize,
 	/// CUDA associated stream, i.e. `S`
 	pub cuda_stream: cudaStream_t,
+}
+impl ExecutionConfig {
+	pub const DEFAULT_NUM_THREADS_PER_BLOCK: u32 = 1024;
+
+	/// Returns an `ExecutionConfig` with `num_threads` **or more** threads total, arranged in
+	/// blocks of dimension `1024x1x1` or less.
+	pub fn from_num_threads(num_threads: u32) -> Self {
+		ExecutionConfig::from_num_threads_with_shared_mem_per_thread(num_threads, 0)
+	}
+
+	/// Returns an `ExecutionConfig` with `num_threads` **or more** threads total, arranged in
+	/// blocks of dimension `1024x1x1` or less, and with `shared_mem_size` bytes of shared storage
+	/// per thread.
+	pub fn from_num_threads_with_shared_mem_per_thread(num_threads: u32, shared_mem_size: usize) -> Self {
+		let num_threads_per_block = if num_threads < ExecutionConfig::DEFAULT_NUM_THREADS_PER_BLOCK {
+			num_threads
+		} else {
+			ExecutionConfig::DEFAULT_NUM_THREADS_PER_BLOCK
+		};
+		let num_blocks = div_ceil(num_threads as usize, num_threads_per_block as usize) as u32;
+
+		ExecutionConfig::from((num_blocks, num_threads_per_block, num_threads_per_block as usize * shared_mem_size))
+	}
 }
 
 impl<A, B> From<(A, B)> for ExecutionConfig where A: Into<Dim3>, B: Into<Dim3> {
