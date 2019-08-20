@@ -6,7 +6,7 @@ use crate::*;
 /// Set of operations that all `Tensor`s implement
 pub trait TensorTrait: Sized {
 	/// Element type
-	type Elem: CudaNumber;
+	type Elem: GpuType;
 	/// Dimension type
 	type Dim: Dimension;
 
@@ -21,11 +21,11 @@ pub trait TensorTrait: Sized {
 
 /// `n`-dimensional vector that can be easily moved between host and device
 #[derive(Debug)]
-pub enum Tensor<T: CudaNumber + 'static, D: Dimension> {
+pub enum Tensor<T: GpuType + 'static, D: Dimension> {
 	CpuTensor(CpuTensor<T, D>),
 	GpuTensor(GpuTensor<T, D>),
 }
-impl<T: CudaNumber, D: Dimension> TensorTrait for Tensor<T, D> {
+impl<T: GpuType, D: Dimension> TensorTrait for Tensor<T, D> {
 	type Elem = T;
 	type Dim = D;
 

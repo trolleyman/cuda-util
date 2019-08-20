@@ -1,3 +1,4 @@
+//! **This is a private crate, meant to only be used for `cuda_macros` and `cuda_macros_impl`. Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in `cuda_macros_impl`. **
 
 extern crate cuda;
 extern crate proc_macro2;
@@ -13,12 +14,14 @@ pub mod conv;
 pub mod write;
 pub mod file;
 mod perms;
+mod generic;
 mod execution_config;
-mod cuda_number;
+mod gpu_type;
 
 pub use perms::*;
+pub use generic::*;
 pub use execution_config::{Dim3, ExecutionConfig};
-pub use cuda_number::{CudaNumber, CudaNumberType};
+pub use gpu_type::{GpuType, GpuTypeEnum};
 
 
 #[derive(Clone, Debug)]
@@ -32,28 +35,28 @@ impl FnInfo {
 	pub fn new(f: &syn::ItemFn, fn_type: FunctionType) -> Result<FnInfo, syn::Error> {
 		use syn::{punctuated::Punctuated, token::Add, GenericParam, TypeParamBound, TraitBoundModifier, WherePredicate};
 
-		fn type_param_bound_is_cuda_number(bounds: &Punctuated<TypeParamBound, Add>) -> Result<bool, syn::Error> {
+		fn type_param_bound_is_gpu_type(bounds: &Punctuated<TypeParamBound, Add>) -> Result<bool, syn::Error> {
 			if bounds.len() == 0 {
 				Ok(false)
 			} else if bounds.len() > 1 {
-				Err(syn::Error::new_spanned(bounds, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+				Err(syn::Error::new_spanned(bounds, "generic param must be bound by `GpuType`, e.g. `T: GpuType`"))
 			} else {
 				match &bounds[0] {
 					TypeParamBound::Trait(bound) => {
 						if bound.modifier != TraitBoundModifier::None {
-							Err(syn::Error::new_spanned(bound.modifier, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+							Err(syn::Error::new_spanned(bound.modifier, "generic param must be bound by `GpuType`, e.g. `T: GpuType`"))
 						} else if let Some(lts) = &bound.lifetimes {
-							Err(syn::Error::new_spanned(lts, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
-						} else if type_path_matches(&bound.path, "::cuda_macros_common::CudaNumber") ||
-								type_path_matches(&bound.path, "::cuda_macros::CudaNumber") ||
-								type_path_matches(&bound.path, "::cuda_util::CudaNumber") {
+							Err(syn::Error::new_spanned(lts, "generic param must be bound by `GpuType`, e.g. `T: GpuType`"))
+						} else if type_path_matches(&bound.path, "::cuda_macros_common::GpuType") ||
+								type_path_matches(&bound.path, "::cuda_macros::GpuType") ||
+								type_path_matches(&bound.path, "::cuda_util::GpuType") {
 							Ok(true)
 						} else {
-							Err(syn::Error::new_spanned(&bound.path, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+							Err(syn::Error::new_spanned(&bound.path, "generic param must be bound by `GpuType`, e.g. `T: GpuType`"))
 						}
 					},
 					TypeParamBound::Lifetime(bound) => {
-						Err(syn::Error::new_spanned(bound, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"))
+						Err(syn::Error::new_spanned(bound, "generic param must be bound by `GpuType`, e.g. `T: GpuType`"))
 					}
 				}
 			}
@@ -61,7 +64,7 @@ impl FnInfo {
 
 		let mut generics: Vec<(syn::Ident, proc_macro2::Span, bool)> = Vec::new();
 
-		// Get `T: CudaNumber` generics
+		// Get `T: GpuType` generics
 		for generic in &f.decl.generics.params {
 			match generic {
 				GenericParam::Type(generic) => {
@@ -72,7 +75,7 @@ impl FnInfo {
 						if generics.iter().find(|(ident, _, _)| *ident == generic.ident).is_some() {
 							return Err(syn::Error::new_spanned(&generic.ident, "generic already declared"));
 						}
-						generics.push((generic.ident.clone(), generic.span(), type_param_bound_is_cuda_number(&generic.bounds)?));
+						generics.push((generic.ident.clone(), generic.span(), type_param_bound_is_gpu_type(&generic.bounds)?));
 					}
 				},
 				GenericParam::Lifetime(generic) => {
@@ -92,15 +95,15 @@ impl FnInfo {
 						if let Some(lts) = &predicate.lifetimes {
 							return Err(syn::Error::new_spanned(lts, "lifetimes on generic predicates not supported"));
 						}
-						if !type_param_bound_is_cuda_number(&predicate.bounds)? {
-							return Err(syn::Error::new_spanned(&predicate.bounds, "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"));
+						if !type_param_bound_is_gpu_type(&predicate.bounds)? {
+							return Err(syn::Error::new_spanned(&predicate.bounds, "generic param must be bound by `GpuType`, e.g. `T: GpuType`"));
 						}
 						let path = get_type_path(&predicate.bounded_ty)?;
 						let mut found = false;
-						for (gen_ident, _, has_cuda_number_bound) in generics.iter_mut() {
+						for (gen_ident, _, has_gpu_type_bound) in generics.iter_mut() {
 							if path.is_ident(gen_ident.clone()) {
 								found = true;
-								*has_cuda_number_bound = true;
+								*has_gpu_type_bound = true;
 								break;
 							}
 						}
@@ -122,10 +125,10 @@ impl FnInfo {
 			}
 		}
 		
-		// Check every generic has a cuda number bound
-		for (_, span, has_cuda_number_bound) in generics.iter() {
-			if !has_cuda_number_bound {
-				return Err(syn::Error::new(span.clone(), "generic param must be bound by `CudaNumber`, e.g. `T: CudaNumber`"));
+		// Check every generic has a GPU type bound
+		for (_, span, has_gpu_type_bound) in generics.iter() {
+			if !has_gpu_type_bound {
+				return Err(syn::Error::new(span.clone(), "generic param must be bound by `GpuType`, e.g. `T: GpuType`"));
 			}
 		}
 		

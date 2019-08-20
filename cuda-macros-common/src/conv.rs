@@ -57,7 +57,7 @@ pub fn rust_shared_type_to_c(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<'s
 }
 
 /// Converts a Rust type into a C type
-pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, cnst: bool) -> Result<Cow<'static, str>, Option<syn::Error>> {
+pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, mut cnst: bool) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	use syn::Type;
 
 	let cty = match &ty {
@@ -66,7 +66,10 @@ pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, cnst: bool) -> Result<Co
 		Type::Ptr(ty) => {
 			match (&ty.mutability, &ty.const_token) {
 				(Some(m), Some(c)) => Err(Some(syn::Error::new_spanned(super::tokens_join2(m.clone(), c.clone()), "pointer is both const and mutable"))),
-				(None, Some(_)) => Ok(format!("{}* const", rust_type_to_c(&ty.elem, fn_info, true)?).into()),
+				(None, Some(_)) => {
+					cnst = true;
+					Ok(format!("{}*", rust_type_to_c(&ty.elem, fn_info, true)?).into())
+				},
 				(Some(_), None) => Ok(format!("{}*", rust_type_to_c(&ty.elem, fn_info, false)?).into()),
 				(None, None) => Err(Some(syn::Error::new_spanned(ty.clone(), "pointer must be mut or const"))),
 			}

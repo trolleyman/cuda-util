@@ -7,7 +7,7 @@ use std::fmt;
 
 use chrono::Local;
 
-use super::{FunctionType, FnInfo, CudaNumberType, permutations_err, conv};
+use super::{FunctionType, FnInfo, GpuTypeEnum, permutations_err, conv};
 use super::file::*;
 
 
@@ -117,7 +117,7 @@ fn write_fn_header_file<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnIn
 	// Write function
 	if fn_info.ty == FunctionType::Global {
 		if fn_info.is_generic() {
-			permutations_err::<TransError, _, _>(CudaNumberType::types(), fn_info.number_generics.len(), |tys| {
+			permutations_err::<TransError, _, _>(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
 				write_fn_decl(of, f, fn_info, true, Some(tys))?;
 				writeln!(of, ";")?;
 				Ok(())
@@ -152,7 +152,7 @@ fn write_fn_source_file<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnIn
 	// Write wrapper function
 	if fn_info.ty == FunctionType::Global {
 		if fn_info.is_generic() {
-			permutations_err::<TransError, _, _>(CudaNumberType::types(), fn_info.number_generics.len(), |tys| {
+			permutations_err::<TransError, _, _>(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
 				write_fn_decl(of, f, fn_info, true, Some(tys))?;
 				writeln!(of, " {{")?;
 				write_wrapper_fn_body(of, f, fn_info, Some(tys))?;
@@ -176,7 +176,7 @@ fn write_fn_source_file<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnIn
 }
 
 /// Write function declaration, e.g. `void hello()`
-fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_wrapper: bool, generic_tys: Option<&[CudaNumberType]>) -> Result<(), TransError> {
+fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_wrapper: bool, generic_tys: Option<&[GpuTypeEnum]>) -> Result<(), TransError> {
 	let ret: Cow<'static, str> = match &f.decl.output {
 		syn::ReturnType::Default => "void".into(),
 		syn::ReturnType::Type(_, ty) => conv::rust_type_to_c(&ty, fn_info, false)
@@ -190,11 +190,22 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 		// Add ExecutionConfig argument
 		args.push("rust_cuda_macros_execution_config_t rust_cuda_macros_config".into());
 	}
-	for arg in f.decl.inputs.iter() {
-		if let Some((ty, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
-			args.push(format!("{} {}", ty, ident));
+	if let Some(generic_tys) = generic_tys {
+		let generic_tys: Vec<_> = fn_info.number_generics.iter().zip(generic_tys.iter()).map(|(x, &y)| (x.as_str(), y)).collect();
+		let args_decl = super::instantiate_generic_args(&f.decl.inputs, generic_tys.as_slice());
+		for arg in args_decl.iter() {
+			if let Some((ty, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
+				args.push(format!("{} {}", ty, ident));
+			}
+		}
+	} else {
+		for arg in f.decl.inputs.iter() {
+			if let Some((ty, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
+				args.push(format!("{} {}", ty, ident));
+			}
 		}
 	}
+	
 	let args = args.join(", ");
 	let mut fn_ident = if is_wrapper {
 		format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), &f.ident)
@@ -217,7 +228,7 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 }
 
 /// Wrapper function body: all this does is call the CUDA function
-fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, generic_tys: Option<&[CudaNumberType]>) -> Result<(), TransError> {
+fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, generic_tys: Option<&[GpuTypeEnum]>) -> Result<(), TransError> {
 	let mut args = vec![];
 	for arg in f.decl.inputs.iter() {
 		if let Some((_, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
@@ -227,7 +238,7 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnI
 	let args = args.join(", ");
 	
 	if let Some(tys) = generic_tys {
-		writeln!(of, "\treturn {}<", &f.ident)?;
+		write!(of, "\treturn {}<", &f.ident)?;
 		for (i, ty) in tys.iter().enumerate() {
 			write!(of, "{}", ty.c_name())?;
 			if i != tys.len() - 1 {

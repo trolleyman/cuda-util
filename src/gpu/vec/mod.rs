@@ -8,7 +8,7 @@ use std::convert::{AsRef, AsMut};
 
 use cfg_if::cfg_if;
 
-use crate::CudaNumber;
+use crate::GpuType;
 use crate::rcuda::*;
 use super::func;
 
@@ -336,7 +336,7 @@ impl<T> GpuSlice<T> {
 	// TODO: split, split_mut, rsplit, rsplit_mut, splitn, splitn_mut, rsplitn, rsplitn_mut
 
 	/// Returns `true` if the slice contains an element with a given value.
-	pub fn contains(&self, x: &T) -> bool where T: CudaNumber {
+	pub fn contains(&self, x: &T) -> bool where T: GpuType {
 		func::contains(*x, self.as_ptr(), self.len())
 	}
 
@@ -349,7 +349,7 @@ impl<T> GpuSlice<T> {
 	/// assert!(v.starts_with(&GpuVec::from(vec![1, 2, 3])));
 	/// assert!(!v.starts_with(&GpuVec::from(vec![1, 4, 5])));
 	/// ```
-	pub fn starts_with(&self, needle: &GpuSlice<T>) -> bool where T: CudaNumber {
+	pub fn starts_with(&self, needle: &GpuSlice<T>) -> bool where T: GpuType {
 		if self.len() < needle.len() {
 			false
 		} else {
@@ -366,7 +366,7 @@ impl<T> GpuSlice<T> {
 	/// assert!(v.ends_with(&GpuVec::from(vec![4, 5])));
 	/// assert!(!v.ends_with(&GpuVec::from(vec![1, 4, 5])));
 	/// ```
-	pub fn ends_with(&self, needle: &GpuSlice<T>) -> bool where T: CudaNumber {
+	pub fn ends_with(&self, needle: &GpuSlice<T>) -> bool where T: GpuType {
 		if self.len() < needle.len() {
 			false
 		} else {
@@ -395,7 +395,7 @@ impl<T, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuSlice<T> {
 		index.slice_mut(self)
 	}
 }
-impl<T> cmp::PartialEq<GpuSlice<T>> for GpuSlice<T> where T: CudaNumber {
+impl<T> cmp::PartialEq<GpuSlice<T>> for GpuSlice<T> where T: GpuType {
 	fn eq(&self, other: &GpuSlice<T>) -> bool {
 		unsafe { func::eq(self.as_ptr(), self.len(), other.as_ptr(), other.len()) }
 	}
@@ -403,7 +403,7 @@ impl<T> cmp::PartialEq<GpuSlice<T>> for GpuSlice<T> where T: CudaNumber {
 		unsafe { func::ne(self.as_ptr(), self.len(), other.as_ptr(), other.len()) }
 	}
 }
-impl<T> cmp::Eq for GpuSlice<T> where T: CudaNumber + cmp::Eq {}
+impl<T> cmp::Eq for GpuSlice<T> where T: GpuType + cmp::Eq {}
 
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 

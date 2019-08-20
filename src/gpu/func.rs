@@ -41,7 +41,7 @@ unsafe fn global_reverse_vector(vec: *mut u8, elem_size: u32, len: u32) {
 	}
 }
 
-pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: CudaNumber {
+pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: GpuType {
 	TEMP_DEVICE_STORAGE.clear();
 	TEMP_DEVICE_STORAGE.push(0);
 	let conf = ExecutionConfig::from_num_threads(len as u32);
@@ -50,27 +50,27 @@ pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: Cuda
 }
 
 #[global]
-pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: usize) where T: CudaNumber {
+pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: usize) where T: GpuType {
 	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
 	if (vec[i] == x) {
 		*found = true;
 	}
 }
 
-pub unsafe fn eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: CudaNumber {
+pub unsafe fn eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: GpuType {
 	unimplemented!()
 }
 
-#[global]
-pub unsafe fn global_eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: CudaNumber {
+// #[global]
+// pub unsafe fn global_eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: GpuType {
 	
-}
+// }
 
-pub unsafe fn ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: CudaNumber {
+pub unsafe fn ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: GpuType {
 	unimplemented!()
 }
 
-#[global]
-pub unsafe fn global_ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: CudaNumber {
+// #[global]
+// pub unsafe fn global_ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: GpuType {
 	
-}
+// }

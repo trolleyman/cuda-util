@@ -1,5 +1,6 @@
+//! **This is a private crate, meant to only be used for `cuda_macros_impl`. Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in `cuda_macros_impl`. **
 
-extern crate cuda_macros_common;
+extern crate cuda_macros_common as util;
 
 extern crate proc_macro;
 extern crate cuda;
@@ -10,12 +11,12 @@ extern crate fs2;
 
 mod output;
 
-use proc_macro2::TokenStream;
-use syn::{parse_macro_input, spanned::Spanned, punctuated::Punctuated};
+use proc_macro2::{TokenStream, Span};
+use syn::parse_macro_input;
 use quote::{quote, ToTokens};
 use quote::TokenStreamExt;
 
-use cuda_macros_common::{conv, FunctionType, FnInfo, CudaNumberType};
+use util::{conv, FunctionType, FnInfo, GpuTypeEnum};
 
 
 fn process_host_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
@@ -41,65 +42,6 @@ fn process_device_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		#vis const #ident: () = ();
 	}*/
 	Ok(TokenStream::new())
-}
-
-fn instantiate_generic_type(ty: &syn::Type, tys: &[(&str, CudaNumberType)]) -> syn::Type {
-	use syn::Type;
-
-	let path = match cuda_macros_common::get_type_path(ty) {
-		Ok(p) => p,
-		// Ignore if type can't be converted into a type path
-		Err(_) => return ty.clone(),
-	};
-	for (gen_ty_name, gen_ty) in tys {
-		if path.is_ident(gen_ty_name) {
-			// Create type from `gen_ty.rust_type()`, i.e. `u64`, `f32`, etc.
-			let mut path_segments = Punctuated::new();
-			path_segments.push_value(syn::PathSegment {
-				ident: syn::Ident::new(gen_ty.rust_name(), ty.span()),
-				arguments: syn::PathArguments::None
-			});
-			return Type::Path(syn::TypePath {
-				qself: None,
-				path: syn::Path {
-					leading_colon: None,
-					segments: path_segments
-				}
-			});
-		}
-	}
-	ty.clone()
-}
-
-fn instantiate_generic_arg(arg: &syn::FnArg, tys: &[(&str, CudaNumberType)]) -> syn::FnArg {
-	use syn::FnArg;
-
-	match arg {
-		FnArg::SelfRef(_) | FnArg::SelfValue(_) | FnArg::Inferred(_) => arg.clone(),
-		FnArg::Captured(arg) => {
-			FnArg::Captured(syn::ArgCaptured {
-				pat: arg.pat.clone(),
-				colon_token: arg.colon_token.clone(),
-				ty: instantiate_generic_type(&arg.ty, tys)
-			})
-		},
-		FnArg::Ignored(ty) => {
-			FnArg::Ignored(instantiate_generic_type(ty, tys))
-		}
-	}
-}
-
-fn instantiate_generic_args(args: &Punctuated<syn::FnArg, syn::token::Comma>, tys: &[(&str, CudaNumberType)]) -> Punctuated<syn::FnArg, syn::token::Comma> {
-	use syn::punctuated::Pair;
-
-	args.pairs().map(|pair| match pair {
-		Pair::Punctuated(arg, p) => {
-			Pair::Punctuated(instantiate_generic_arg(arg, tys), p.clone())
-		},
-		Pair::End(arg) => {
-			Pair::End(instantiate_generic_arg(arg, tys))
-		}
-	}).collect()
 }
 
 fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
@@ -131,8 +73,6 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		}
 	}
 
-	let args = quote!{ #(#args),* };
-
 	let vis = f.vis;
 	let ret = f.decl.output;
 	let generics_params = f.decl.generics.params;
@@ -141,9 +81,14 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 	let fn_ident_c_base = format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), fn_ident);
 
 	if !fn_info.is_generic() {
+		let args = quote!{ #(#args),* };
 		let fn_ident_c = syn::Ident::new(&fn_ident_c_base, fn_ident.span());
 
-		let extern_c_fn = quote!{ extern "C" { #vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl) #ret; } };
+		let extern_c_fn = quote!{
+			extern "C" {
+				#vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl) #ret;
+			}
+		};
 
 		let wrapper_fn = quote!{
 			#vis unsafe fn #fn_ident(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret {
@@ -158,11 +103,13 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		})
 	} else {
 		// Generics
-		let mut tokens = TokenStream::new();
-		let mut fn_ident_c = String::with_capacity(fn_ident_c_base.len());
+		let mut extern_fns = TokenStream::new();
+
+		// Generate `extern "C"` functions
+		let mut fn_ident_c = String::with_capacity(fn_ident_c_base.len() + 3 * fn_info.number_generics.len());
 		let mut tys_extra = vec![];
-		cuda_macros_common::permutations(CudaNumberType::types(), fn_info.number_generics.len(), |tys| {
-			// Get correct ident name (e.g. compare_f32_u32 is from compare<T: CudaNumber, U: CudaNumber>(x: T, y: T) with f32 and u32 type args)
+		cuda_macros_common::permutations(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
+			// Get correct ident name (e.g. compare_f32_u32 is from compare<T: GpuType, U: GpuType>(x: T, y: T) with f32 and u32 type args)
 			fn_ident_c.clone_from(&fn_ident_c_base);
 			for ty in tys.iter() {
 				fn_ident_c.push_str("_");
@@ -175,54 +122,133 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 			for (gen_ty_name, gen_ty) in fn_info.number_generics.iter().zip(tys.iter()) {
 				tys_extra.push((gen_ty_name.as_str(), *gen_ty));
 			}
-			let args_decl_instantiated = instantiate_generic_args(&args_decl, &tys_extra[..]);
-			tokens.extend(quote!{ extern "C" { #vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl_instantiated) #ret; } });
+			let args_decl_instantiated = util::instantiate_generic_args(&args_decl, &tys_extra[..]);
+			extern_fns.extend(quote!{
+				#vis fn #fn_ident_c(config: ::cuda_macros::ExecutionConfig, #args_decl_instantiated) #ret;
+			});
 		});
+		let extern_fns = quote!{
+			extern "C" {
+				#extern_fns
+			}
+		};
 
-		// <T: CudaNumber, etc.>
-		let mut generics = TokenStream::new();
+		// <T: GpuType, etc.>
+		let mut generics_decl = TokenStream::new();
 		if let Some(lt_token) = &f.decl.generics.lt_token {
-			generics.extend(quote!{ #lt_token });
+			generics_decl.extend(quote!{ #lt_token });
 		} else {
-			generics.extend(quote!{ < });
+			generics_decl.extend(quote!{ < });
 		}
-		generics.extend(quote!{ #generics_params });
+		generics_decl.extend(quote!{ #generics_params });
 		if let Some(gt_token) = &f.decl.generics.gt_token {
-			generics.extend(quote!{ #gt_token });
+			generics_decl.extend(quote!{ #gt_token });
 		} else {
-			generics.extend(quote!{ > });
+			generics_decl.extend(quote!{ > });
 		}
-		// let generics = quote!{ <#generics_params> };
-		
-		// where T: CudaNumber
+
+		// where T: GpuType
 		let mut where_clause = TokenStream::new();
 		if let Some(clause) = f.decl.generics.where_clause {
 			where_clause.extend(quote!{ #clause });
 		}
+		
+		// Wrapper function body
+		let args_expr: Vec<_> = args.iter().map(|ident| quote!{ ::std::mem::transmute(#ident) }).collect();
+		let args_expr = quote!{ #(#args_expr),* };
+		
+		// Get vector of (generic type arg name, identifier)
+		let mut match_pattern_types = vec![];
+		for ty_arg_name in fn_info.number_generics.iter() {
+			for arg in args_decl.iter() {
+				match arg {
+					FnArg::Captured(arg) => {
+						let ident = match &arg.pat {
+							Pat::Wild(_) => continue,
+							Pat::Ident(item) => &item.ident,
+							_ => panic!("*Should* never happen due to `check_function_signature`")
+						};
+						// Check for `x: T` args
+						if let Ok(p) = util::get_type_path(&arg.ty) {
+							if p.is_ident(ty_arg_name) {
+								match_pattern_types.push((ty_arg_name.clone(), ident.clone()));
+							}
+						}
+					},
+					FnArg::Ignored(_) => continue,
+					_ => panic!("*Should* never happen due to `check_function_signature`")
+				}
+			}
+		}
+		
+		let mut match_inputs = vec!{};
+		for (_, ident) in match_pattern_types.iter() {
+			match_inputs.push(quote!{
+				<#ident as ::cuda_macros::GpuType>::gpu_type(&#ident)
+			});
+		}
+		let match_input = quote!{ (#(#match_inputs,)*) };
 
-		let wrapper_fn = quote!{
-			#vis unsafe fn #fn_ident#generics(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret #where_clause {
-				let config = config.into();
-				// TODO
-				#fn_ident_c(config, #args)
+		let mut match_inner = quote!{};
+		cuda_macros_common::permutations(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
+			// Generate match arm pattern
+			let mut match_patterns = vec!{};
+			for (ty, ident) in match_pattern_types.iter() {
+				let i = fn_info.number_generics.iter().position(|t| t == ty).unwrap_or(0);
+				let enum_name = tys[i].enum_name();
+				let enum_name = syn::Ident::new(&enum_name, Span::call_site());
+				match_patterns.push(quote!{
+					::cuda_macros::GpuTypeEnum::#enum_name(#ident)
+				});
+			}
+			let match_pattern = quote!{ (#(#match_patterns,)*) };
+			
+			// Generate match arm value
+			fn_ident_c.clone_from(&fn_ident_c_base);
+			for ty in tys.iter() {
+				fn_ident_c.push_str("_");
+				fn_ident_c.push_str(ty.rust_name());
+			}
+			let fn_ident_c = syn::Ident::new(&fn_ident_c, fn_ident.span());
+			
+			let match_expr = quote!{
+				#fn_ident_c(config, #args_expr)
+			};
+			
+			match_inner.extend(quote!{
+				#match_pattern => #match_expr,
+			});
+		});
+
+		let wrapper_fn_body = quote!{
+			let config = config.into();
+			match #match_input {
+				#match_inner
+				_ => unreachable!("report this bug to https://github.com/trolleyman/cuda-util with RUST_BACKTRACE=1"),
 			}
 		};
-		panic!("{}", wrapper_fn);
+
+		let wrapper_fn = quote!{
+			#vis unsafe fn #fn_ident#generics_decl(config: impl ::std::convert::Into<::cuda_macros::ExecutionConfig>, #args_decl) #ret #where_clause {
+				#wrapper_fn_body
+			}
+		};
 
 		Ok(quote!{
-			#tokens
+			#extern_fns
 			#wrapper_fn
 		})
 	}
 }
 
-fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
-	fn infallible_unwrap<T>(val: Result<T, T>) -> T {
-		match val {
-			Ok(t) => t,
-			Err(t) => t,
-		}
+fn infallible_unwrap<T>(val: Result<T, T>) -> T {
+	match val {
+		Ok(t) => t,
+		Err(t) => t,
 	}
+}
+
+fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
 	use cuda_macros_common::FunctionType::*;
 
 	let mut device_host = None;
@@ -303,11 +329,31 @@ fn process_all_fns_inner(item: syn::Item, fn_type: FunctionType, direct: bool) -
 	}
 }
 
+fn try_rustfmt(data: &[u8]) -> Result<Vec<u8>, ()> {
+	use std::process::{Command, Stdio};
+	use std::io::prelude::*;
+
+	let mut child = Command::new("rustfmt")
+		.stdin(Stdio::piped())
+		.stdout(Stdio::piped())
+		.stderr(Stdio::null())
+		.spawn()
+		.map_err(|_| ())?;
+	
+	child.stdin.as_mut().unwrap().write_all(&data).map_err(|_| ())?;
+	let output = child.wait_with_output().map_err(|_| ())?;
+	if output.status.success() {
+		Ok(output.stdout)
+	} else {
+		Err(())
+	}
+}
+
 fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> TokenStream {
 	use std::path::PathBuf;
 	use std::fs::OpenOptions;
 	use std::io::prelude::*;
-	use std::process::{Command, Stdio};
+	use std::io::Cursor;
 	
 	let out_path = std::env::var_os("CUDA_MACROS_OUT_DIR").map(|p| PathBuf::from(p).join("debug.rs"));
 	let from_ts = if out_path.is_some() {
@@ -323,20 +369,16 @@ fn process_all_fns(item: syn::Item, fn_type: FunctionType, direct: bool) -> Toke
 	// Debug output
 	if let Some(p) = out_path {
 		if let Ok(mut f) = OpenOptions::new().read(true).append(true).create(true).open(&p) {
-			writeln!(&mut f).ok();
-			writeln!(&mut f, "/* *** FROM *** */").ok();
-			writeln!(&mut f, "{}", &from_ts.unwrap()).ok();
-			writeln!(&mut f, "/* ***  TO  *** */").ok();
-			writeln!(&mut f, "{}", &ts).ok();
-			writeln!(&mut f, "/* ************ */\n").ok();
-			std::mem::drop(f);
+			let mut data = Cursor::new(Vec::new());
+			writeln!(&mut data, "/* *** FROM *** */").ok();
+			writeln!(&mut data, "{}", &from_ts.unwrap()).ok();
+			writeln!(&mut data, "/* ***  TO  *** */").ok();
+			writeln!(&mut data, "{}", &ts).ok();
+			writeln!(&mut data, "/* ************ */\n").ok();
 			
 			// Run rustfmt if possible
-			Command::new("rustfmt").arg("--emit").arg("files").arg("--").arg(&p)
-				.stdin(Stdio::null())
-				.stdout(Stdio::null())
-				.stderr(Stdio::null())
-				.status().ok();
+			let data = try_rustfmt(&data.get_ref()).unwrap_or(data.into_inner());
+			f.write_all(&data).ok();
 		}
 	}
 	ts
