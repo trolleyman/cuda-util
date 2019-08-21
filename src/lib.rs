@@ -6,7 +6,8 @@ extern crate ndarray;
 extern crate cuda_macros;
 
 mod rcuda;
-
+#[macro_use]
+mod private;
 mod tensor;
 mod cpu;
 mod gpu;
