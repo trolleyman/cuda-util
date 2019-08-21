@@ -1,4 +1,6 @@
-//! **This is a private crate, meant to only be used for `cuda_macros_impl`. Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in `cuda_macros_impl`. **
+//! __This is a private crate, meant to only be used by `cuda_macros_impl`.__
+//! 
+//! __Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in `cuda_macros_impl`.__
 
 extern crate cuda_macros_common as util;
 
@@ -52,32 +54,31 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 	// Create function wrapper & link to CUDA function
 	use syn::{FnArg, Pat};
 
-	if f.unsafety.is_none() {
+	if f.sig.unsafety.is_none() {
 		return Err(syn::Error::new_spanned(f, "#[global] functions are required to be marked as unsafe").to_compile_error());
 	}
 
-	let args_decl = f.decl.inputs;
+	let args_decl = f.sig.inputs;
 	let mut args = vec![];
 	for arg in args_decl.iter() {
 		match arg {
-			FnArg::Captured(arg) => {
-				let ident = match &arg.pat {
+			FnArg::Typed(arg) => {
+				let ident = match &*arg.pat {
 					Pat::Wild(_) => continue,
 					Pat::Ident(item) => item.ident.clone(),
-					_ => panic!("*Should* never happen due to `check_function_signature`")
+					_ => panic!("*should* never happen due to `check_function_signature`")
 				};
 				args.push(ident);
 			},
-			FnArg::Ignored(_) => continue,
-			_ => panic!("*Should* never happen due to `check_function_signature`")
+			FnArg::Receiver(_) => continue,
 		}
 	}
 
 	let vis = f.vis;
-	let ret = f.decl.output;
-	let generics_params = f.decl.generics.params;
+	let ret = f.sig.output;
+	let generics_params = f.sig.generics.params;
 
-	let fn_ident = f.ident.clone();
+	let fn_ident = f.sig.ident.clone();
 	let fn_ident_c_base = format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), fn_ident);
 
 	if !fn_info.is_generic() {
@@ -135,13 +136,13 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 
 		// <T: GpuType, etc.>
 		let mut generics_decl = TokenStream::new();
-		if let Some(lt_token) = &f.decl.generics.lt_token {
+		if let Some(lt_token) = &f.sig.generics.lt_token {
 			generics_decl.extend(quote!{ #lt_token });
 		} else {
 			generics_decl.extend(quote!{ < });
 		}
 		generics_decl.extend(quote!{ #generics_params });
-		if let Some(gt_token) = &f.decl.generics.gt_token {
+		if let Some(gt_token) = &f.sig.generics.gt_token {
 			generics_decl.extend(quote!{ #gt_token });
 		} else {
 			generics_decl.extend(quote!{ > });
@@ -149,7 +150,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 
 		// where T: GpuType
 		let mut where_clause = TokenStream::new();
-		if let Some(clause) = f.decl.generics.where_clause {
+		if let Some(clause) = f.sig.generics.where_clause {
 			where_clause.extend(quote!{ #clause });
 		}
 		
@@ -162,8 +163,8 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		for ty_arg_name in fn_info.number_generics.iter() {
 			for arg in args_decl.iter() {
 				match arg {
-					FnArg::Captured(arg) => {
-						let ident = match &arg.pat {
+					FnArg::Typed(arg) => {
+						let ident = match &*arg.pat {
 							Pat::Wild(_) => continue,
 							Pat::Ident(item) => &item.ident,
 							_ => panic!("*Should* never happen due to `check_function_signature`")
@@ -175,8 +176,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 							}
 						}
 					},
-					FnArg::Ignored(_) => continue,
-					_ => panic!("*Should* never happen due to `check_function_signature`")
+					FnArg::Receiver(_) => continue,
 				}
 			}
 		}

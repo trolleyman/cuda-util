@@ -1,4 +1,6 @@
-//! **This is a private crate, meant to only be used for `cuda_macros` and `cuda_macros_impl`. Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in `cuda_macros_impl`. **
+//! __This is a private crate, meant to only be used by `cuda_macros` and `cuda_macros_impl`.__
+//! 
+//! __Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in `cuda_macros_impl`.__
 
 extern crate cuda;
 extern crate proc_macro2;
@@ -65,7 +67,7 @@ impl FnInfo {
 		let mut generics: Vec<(syn::Ident, proc_macro2::Span, bool)> = Vec::new();
 
 		// Get `T: GpuType` generics
-		for generic in &f.decl.generics.params {
+		for generic in &f.sig.generics.params {
 			match generic {
 				GenericParam::Type(generic) => {
 					if conv::is_item_enabled(&generic.attrs, conv::CfgType::DeviceCode)? {
@@ -88,7 +90,7 @@ impl FnInfo {
 		}
 		
 		// Process where bounds
-		if let Some(whre) = &f.decl.generics.where_clause {
+		if let Some(whre) = &f.sig.generics.where_clause {
 			for predicate in &whre.predicates {
 				match predicate {
 					WherePredicate::Type(predicate) => {
@@ -101,7 +103,7 @@ impl FnInfo {
 						let path = get_type_path(&predicate.bounded_ty)?;
 						let mut found = false;
 						for (gen_ident, _, has_gpu_type_bound) in generics.iter_mut() {
-							if path.is_ident(gen_ident.clone()) {
+							if path.is_ident(gen_ident) {
 								found = true;
 								*has_gpu_type_bound = true;
 								break;

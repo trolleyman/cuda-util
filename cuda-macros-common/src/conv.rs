@@ -31,9 +31,11 @@ fn rust_shared_type_to_c_inner(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<
 	match ty {
 		Type::Slice(ty) => Ok((format!("extern __shared__ {}", rust_type_to_c(&ty.elem, fn_info, false)?).into(), "[]".into())),
 		Type::Array(ty) => match &ty.len {
-			Expr::Lit(syn::ExprLit{ lit: syn::Lit::Int(lit), .. }) => 
-				Ok((format!("__shared__ {}", rust_type_to_c(&ty.elem, fn_info, false)?).into(), format!("[{}]", lit.value()).into())),
-			_ => Err(Some(syn::Error::new_spanned(ty.clone(), "array length must be a literal number constant")))
+			Expr::Lit(syn::ExprLit{ lit: syn::Lit::Int(lit), .. }) => {
+				let val = lit.base10_parse::<usize>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer too large for usize"))?;
+				Ok((format!("__shared__ {}", rust_type_to_c(&ty.elem, fn_info, false)?).into(), format!("[{}]", val).into()))
+			},
+			_ => Err(Some(syn::Error::new_spanned(ty.len.clone(), "array length must be a literal number constant")))
 		},
 		Type::Reference(ty) => match &*ty.elem {
 			Type::Reference(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "reference-to-reference types are not supported in a #[shared] declaration"))),
@@ -60,7 +62,7 @@ pub fn rust_shared_type_to_c(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<'s
 pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, mut cnst: bool) -> Result<Cow<'static, str>, Option<syn::Error>> {
 	use syn::Type;
 
-	let cty = match &ty {
+	let cty = match ty {
 		Type::Slice(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "slice types are not yet supported"))), // TODO: slices
 		Type::Array(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "array types are not yet supported"))), // TODO: arrays
 		Type::Ptr(ty) => {
@@ -84,7 +86,8 @@ pub fn rust_type_to_c(ty: &syn::Type, fn_info: &FnInfo, mut cnst: bool) -> Resul
 		Type::Path(path) => rust_type_path_to_c(&path, fn_info),
 		Type::Paren(ty) => rust_type_to_c(&ty.elem, fn_info, cnst),
 		Type::Group(ty) => rust_type_to_c(&ty.elem, fn_info, cnst),
-		Type::Infer(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "inferred types are not supported")))
+		Type::Infer(ty) => Err(Some(syn::Error::new_spanned(ty.clone(), "inferred types are not supported"))),
+		_ => Err(Some(syn::Error::new_spanned(ty.clone(), "unknown type")))
 	};
 	if cnst {
 		cty.map(|c| format!("{} const", c).into())
@@ -156,12 +159,9 @@ pub fn rust_path_to_c(path: &syn::Path, fn_info: &FnInfo) -> Result<Cow<'static,
 pub fn rust_fn_arg_to_c(arg: &syn::FnArg, fn_info: &FnInfo) -> Result<Option<(Cow<'static, str>, syn::Ident)>, syn::Error> {
 	use syn::{FnArg, Pat};
 	match arg {
-		FnArg::SelfRef(arg) => Err(syn::Error::new_spanned(arg.clone(), "`self` is not allowed")),
-		FnArg::SelfValue(arg) => Err(syn::Error::new_spanned(arg.clone(), "`self` is not allowed")),
-		FnArg::Inferred(arg) => Err(syn::Error::new_spanned(arg.clone(), "arguments with inferred types are not allowed")),
-		FnArg::Ignored(_) => Ok(None),
-		FnArg::Captured(arg) => {
-			match &arg.pat {
+		FnArg::Receiver(arg) => Err(syn::Error::new_spanned(arg.clone(), "`self` functions are not allowed")),
+		FnArg::Typed(arg) => {
+			match &*arg.pat {
 				Pat::Wild(_) => Ok(None),
 				Pat::Ident(pat) if pat.by_ref.is_none() && pat.subpat.is_none() => {
 					match conv::rust_type_to_c(&arg.ty, fn_info, pat.mutability.is_none()) {
@@ -211,16 +211,16 @@ pub fn is_item_enabled_attr(attr: &syn::Attribute, cfg_type: CfgType) -> Result<
 		return Err(syn::Error::new_spanned(attr.clone(), "inner attributes are not supported"));
 	}
 
-	if super::type_path_matches(&attr.path, "::cfg") {
-		match attr.parse_meta() {
-			Ok(Meta::Word(meta)) => return Err(syn::Error::new_spanned(meta.clone(), "no arguments specified to cfg")),
-			Ok(Meta::List(_meta)) => {
+	let attr = attr.parse_meta().map_err(|_| syn::Error::new_spanned(attr.clone(), "cfg meta syntax not supported"))?;
+	if super::type_path_matches(attr.path(), "::cfg") {
+		match &attr {
+			Meta::Path(meta) => return Err(syn::Error::new_spanned(meta.clone(), "no arguments specified to cfg")),
+			Meta::List(_meta) => {
 				// TODO
 				unimplemented!("#[cfg(<option>)]");
 			},
-			Ok(Meta::NameValue(meta)) => return Err(syn::Error::new_spanned(meta.clone(), "cfg meta syntax not supported")),
-			Err(_) => return Err(syn::Error::new_spanned(attr.clone(), "cfg meta syntax not supported"))
+			Meta::NameValue(meta) => return Err(syn::Error::new_spanned(meta.clone(), "cfg meta syntax not supported")),
 		}
 	}
-	Err(syn::Error::new_spanned(attr.path.clone(), "unsupported attribute"))
+	Err(syn::Error::new_spanned(attr.path().clone(), "unsupported attribute"))
 }

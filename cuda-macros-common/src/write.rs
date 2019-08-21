@@ -45,16 +45,16 @@ impl std::error::Error for TransError {
 
 /// Check if  afunction signature is valid
 fn check_function_signature(f: &syn::ItemFn) -> Result<(), syn::Error> {
-	if let Some(item) = &f.constness {
+	if let Some(item) = &f.sig.constness {
 		return Err(syn::Error::new_spanned(item.clone(), "const CUDA functions are not allowed"));
 	}
-	if let Some(item) = &f.asyncness {
+	if let Some(item) = &f.sig.asyncness {
 		return Err(syn::Error::new_spanned(item.clone(), "async CUDA functions are not allowed"));
 	}
-	if let Some(item) = &f.abi {
+	if let Some(item) = &f.sig.abi {
 		return Err(syn::Error::new_spanned(item.clone(), "non-default ABIs on CUDA functions are not allowed"));
 	}
-	if let Some(item) = &f.decl.variadic {
+	if let Some(item) = &f.sig.variadic {
 		return Err(syn::Error::new_spanned(item.clone(), "varadic CUDA functions are not allowed"));
 	}
 	// if f.decl.generics.params.len() != 0 {
@@ -177,13 +177,13 @@ fn write_fn_source_file<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnIn
 
 /// Write function declaration, e.g. `void hello()`
 fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_wrapper: bool, generic_tys: Option<&[GpuTypeEnum]>) -> Result<(), TransError> {
-	let ret: Cow<'static, str> = match &f.decl.output {
+	let ret: Cow<'static, str> = match &f.sig.output {
 		syn::ReturnType::Default => "void".into(),
 		syn::ReturnType::Type(_, ty) => conv::rust_type_to_c(&ty, fn_info, false)
 			.map_err(|e| e.unwrap_or_else(|| syn::Error::new_spanned(ty, "invalid return type")))?,
 	};
 	if fn_info.ty == FunctionType::Global && ret != "void" {
-		return Err(syn::Error::new_spanned(f.decl.output.clone(), "invalid return type: #[global] functions must return nothing"))?;
+		return Err(syn::Error::new_spanned(f.sig.output.clone(), "invalid return type: #[global] functions must return nothing"))?;
 	}
 	let mut args = vec![];
 	if is_wrapper {
@@ -192,14 +192,14 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 	}
 	if let Some(generic_tys) = generic_tys {
 		let generic_tys: Vec<_> = fn_info.number_generics.iter().zip(generic_tys.iter()).map(|(x, &y)| (x.as_str(), y)).collect();
-		let args_decl = super::instantiate_generic_args(&f.decl.inputs, generic_tys.as_slice());
+		let args_decl = super::instantiate_generic_args(&f.sig.inputs, generic_tys.as_slice());
 		for arg in args_decl.iter() {
 			if let Some((ty, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
 				args.push(format!("{} {}", ty, ident));
 			}
 		}
 	} else {
-		for arg in f.decl.inputs.iter() {
+		for arg in f.sig.inputs.iter() {
 			if let Some((ty, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
 				args.push(format!("{} {}", ty, ident));
 			}
@@ -208,9 +208,9 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 	
 	let args = args.join(", ");
 	let mut fn_ident = if is_wrapper {
-		format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), &f.ident)
+		format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), &f.sig.ident)
 	} else {
-		format!("{}", &f.ident)
+		format!("{}", &f.sig.ident)
 	};
 	if let Some(tys) = generic_tys {
 		for ty in tys.iter() {
@@ -219,7 +219,7 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 		}
 	}
 	let attr = if is_wrapper { "".into() } else { format!("{} ", fn_info.ty.cattr()) };
-	writeln!(of, "/* {} */", &f.ident/* TODO: &f.decl.inputs.iter().map(|arg| arg.to_string()).collect::<String>().join(", ") */)?;
+	writeln!(of, "/* {} */", &f.sig.ident/* TODO: &f.decl.inputs.iter().map(|arg| arg.to_string()).collect::<String>().join(", ") */)?;
 	if fn_info.is_generic() && !is_wrapper {
 		writeln!(of, "{}", fn_info.c_template_decl)?;
 	}
@@ -231,7 +231,7 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 /// Wrapper function body: all this does is call the CUDA function
 fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, generic_tys: Option<&[GpuTypeEnum]>) -> Result<(), TransError> {
 	let mut args = vec![];
-	for arg in f.decl.inputs.iter() {
+	for arg in f.sig.inputs.iter() {
 		if let Some((_, ident)) = conv::rust_fn_arg_to_c(&arg, fn_info)? {
 			args.push(format!("{}", ident));
 		}
@@ -239,7 +239,7 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnI
 	let args = args.join(", ");
 	
 	if let Some(tys) = generic_tys {
-		write!(of, "\treturn {}<", &f.ident)?;
+		write!(of, "\treturn {}<", &f.sig.ident)?;
 		for (i, ty) in tys.iter().enumerate() {
 			write!(of, "{}", ty.c_name())?;
 			if i != tys.len() - 1 {
@@ -248,7 +248,7 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnI
 		}
 		writeln!(of, "><<<")?;
 	} else {
-		writeln!(of, "\treturn {}<<<", &f.ident)?;
+		writeln!(of, "\treturn {}<<<", &f.sig.ident)?;
 	}
 	writeln!(of, "\t\tdim3(rust_cuda_macros_config.grid_size.x, rust_cuda_macros_config.grid_size.y, rust_cuda_macros_config.grid_size.z),")?;
 	writeln!(of, "\t\tdim3(rust_cuda_macros_config.block_size.x, rust_cuda_macros_config.block_size.y, rust_cuda_macros_config.block_size.z),")?;
@@ -281,25 +281,22 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &s
 						is_shared = true;
 					}
 				}
-				if local.pats.len() != 1 {
-					Err(syn::Error::new_spanned(local.pats.clone(), "invalid pattern: only simple identifier allowed"))?;
-				}
-				let pat = &local.pats[0];
-				let (ident, mutability) = match pat {
-					Pat::Ident(pident) if pident.by_ref == None && pident.subpat == None => {
-						(pident.ident.to_string(), pident.mutability.is_some())
+				let (ident, mutability, ty) = match &local.pat {
+					Pat::Type(pt) => {
+						match &*pt.pat {
+							Pat::Ident(pident) if pident.by_ref == None && pident.subpat == None => {
+								(pident.ident.to_string(), pident.mutability.is_some(), &pt.ty)
+							},
+							_ => return Err(syn::Error::new_spanned(local.pat.clone(), "invalid pattern: only simple identifier allowed").into()),
+						}
 					},
-					_ => return Err(syn::Error::new_spanned(local.pats.clone(), "invalid pattern: only simple identifier allowed").into()),
+					_ =>return Err(syn::Error::new_spanned(local.pat.clone(), "invalid pattern: type annotations are required").into())
 				};
-				if local.ty.is_none() {
-					return Err(syn::Error::new_spanned(local.clone(), "inferred types are not supported").into());
-				}
-				let ty = &local.ty.as_ref().unwrap();
 				let (cty_prefix, cty_postfix) = if is_shared {
-					conv::rust_shared_type_to_c(&ty.1, fn_info)?
+					conv::rust_shared_type_to_c(&*ty, fn_info)?
 				} else {
-					(conv::rust_type_to_c(&ty.1, fn_info, !mutability)
-						.map_err(|e| e.unwrap_or(syn::Error::new_spanned(ty.1.clone(), "invalid type")))?, "".into())
+					(conv::rust_type_to_c(&*ty, fn_info, !mutability)
+						.map_err(|e| e.unwrap_or(syn::Error::new_spanned(ty.clone(), "invalid type")))?, "".into())
 				};
 				write!(&mut of, "{} ", cty_prefix)?;
 				write!(&mut of, "{}", ident)?;
@@ -359,8 +356,9 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 	use syn::{UnOp, Expr, Member};
 
 	match e {
+		Expr::Async(e) => Err(syn::Error::new_spanned(e.clone(), "async is not supported"))?,
+		Expr::Await(e) => Err(syn::Error::new_spanned(e.clone(), "await expressions are not supported"))?,
 		Expr::Box(e) => Err(syn::Error::new_spanned(e.clone(), "box expressions are not supported"))?,
-		Expr::InPlace(e) => Err(syn::Error::new_spanned(e.clone(), "placement expressions are not supported"))?,
 		Expr::Array(e) => {
 			if conv::is_item_enabled(&e.attrs, conv::CfgType::DeviceCode)? {
 				write!(&mut of, "[")?;
@@ -458,7 +456,7 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 				}
 				
 				// Get identifier
-				let ident: Cow<'static, str> = match &*e.pat {
+				let ident: Cow<'static, str> = match &e.pat {
 					syn::Pat::Wild(_) => "_wild".into(),
 					syn::Pat::Ident(pat) => {
 						if let Some(r) = &pat.by_ref {
@@ -596,10 +594,10 @@ fn write_expr<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, e: &syn:
 			}
 		},
 		Expr::Try(e) => Err(syn::Error::new_spanned(e.clone(), "try expressions are not supported"))?,
-		Expr::Async(e) => Err(syn::Error::new_spanned(e.clone(), "async is not supported"))?,
 		Expr::TryBlock(e) => Err(syn::Error::new_spanned(e.clone(), "try blocks are not supported"))?,
 		Expr::Yield(e) => Err(syn::Error::new_spanned(e.clone(), "yield is not supported"))?,
 		Expr::Verbatim(e) => Err(syn::Error::new_spanned(e.clone(), "unknown expression"))?,
+		_ => Err(syn::Error::new_spanned(e.clone(), "unknown expression type"))?,
 	}
 	Ok(())
 }
@@ -642,7 +640,7 @@ fn write_binop<F: FileLike>(mut of: FileLikeIndent<F>, op: &syn::BinOp) -> Resul
 
 fn write_lit<F: FileLike>(mut of: FileLikeIndent<F>, lit: &syn::Lit) -> Result<(), TransError> {
 	use syn::Lit::*;
-	use syn::{IntSuffix, FloatSuffix};
+
 	match lit {
 		Str(lit) => write_string_lit(of.clone(), lit.span(), &lit.value())?,
 		ByteStr(lit) => write_string_lit(of.clone(), lit.span(), &lit.value().iter().map(|&c| c as char).collect::<String>())?,
@@ -650,26 +648,36 @@ fn write_lit<F: FileLike>(mut of: FileLikeIndent<F>, lit: &syn::Lit) -> Result<(
 		Char(lit) => write!(&mut of, "((uint32_t){}/*{:?}*/)", lit.value() as u32, lit.value())?,
 		Int(lit) => {
 			match lit.suffix() {
-				IntSuffix::None  => write!(&mut of, "{}", lit.value())?,
-				IntSuffix::I8    => write!(&mut of, "((int8_t){})", lit.value())?,
-				IntSuffix::U8    => write!(&mut of, "((uint8_t){})", lit.value())?,
-				IntSuffix::I16   => write!(&mut of, "((int16_t){})", lit.value())?,
-				IntSuffix::U16   => write!(&mut of, "((uint16_t){})", lit.value())?,
-				IntSuffix::I32   => write!(&mut of, "((int32_t){})", lit.value())?,
-				IntSuffix::U32   => write!(&mut of, "((uint32_t){})", lit.value())?,
-				IntSuffix::I64   => write!(&mut of, "((int64_t){})", lit.value())?,
-				IntSuffix::U64   => write!(&mut of, "((uint64_t){})", lit.value())?,
-				IntSuffix::I128  => Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported"))?,
-				IntSuffix::U128  => Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported"))?,
-				IntSuffix::Isize => write!(&mut of, "((isize_t){})", lit.value())?,
-				IntSuffix::Usize => write!(&mut of, "((usize_t){})", lit.value())?,
+				""      => write!(&mut of, "{}"            , lit.base10_parse::<i64>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for i64"))?)?,
+				"u" | "U" => write!(&mut of, "{}u"         , lit.base10_parse::<u64>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for u64"))?)?,
+				"i8"    => write!(&mut of, "((int8_t){})"  , lit.base10_parse::<i8 >().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for i8"))?)?,
+				"u8"    => write!(&mut of, "((uint8_t){})" , lit.base10_parse::<u8 >().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for u8"))?)?,
+				"i16"   => write!(&mut of, "((int16_t){})" , lit.base10_parse::<i16>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for i16"))?)?,
+				"u16"   => write!(&mut of, "((uint16_t){})", lit.base10_parse::<u16>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for u16"))?)?,
+				"i32"   => write!(&mut of, "((int32_t){})" , lit.base10_parse::<i32>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for i32"))?)?,
+				"u32"   => write!(&mut of, "((uint32_t){})", lit.base10_parse::<u32>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for u32"))?)?,
+				"i64"   => write!(&mut of, "((int64_t){})" , lit.base10_parse::<i64>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for i64"))?)?,
+				"u64"   => write!(&mut of, "((uint64_t){})", lit.base10_parse::<u64>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for u64"))?)?,
+				"u128" | "i128" => return Err(syn::Error::new_spanned(lit.clone(), "128-bit integers are not supported").into()),
+				"isize" => return Err(syn::Error::new_spanned(lit.clone(), "isize integers are not supported").into()),
+				"usize" => write!(&mut of, "((size_t){})", lit.base10_parse::<usize>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for usize"))?)?,
+				"l" | "L"
+					=> write!(&mut of, "{}l" , lit.base10_parse::<std::os::raw::c_long>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for long int"))?)?,
+				"ul" | "uL" | "Ul" | "UL" | "lu" | "Lu" | "lU" | "LU"
+					=> write!(&mut of, "{}l" , lit.base10_parse::<std::os::raw::c_ulong>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for unsigned long int"))?)?,
+				"ll" | "LL"
+					=> write!(&mut of, "{}ll", lit.base10_parse::<std::os::raw::c_longlong>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for long long int"))?)?,
+				"ull" | "uLL" | "Ull" | "ULL" | "llu" | "LLu" | "llU" | "LLU"
+					=> write!(&mut of, "{}ll", lit.base10_parse::<std::os::raw::c_ulonglong>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer is too large for unsigned long long int"))?)?,
+				_ => return Err(syn::Error::new_spanned(lit.clone(), "unrecognised suffix").into()),
 			}
 		},
 		Float(lit) => {
 			match lit.suffix() {
-				FloatSuffix::None => write!(&mut of, "{}", lit.value())?,
-				FloatSuffix::F32  => write!(&mut of, "((float){})", lit.value())?,
-				FloatSuffix::F64  => write!(&mut of, "((double){})", lit.value())?,
+				"" => write!(&mut of, "{}", lit.base10_parse::<f64>().map_err(|_| syn::Error::new_spanned(lit.clone(), "float is too large for f64"))?)?,
+				"f" | "f32" => write!(&mut of, "{}f", lit.base10_parse::<f32>().map_err(|_| syn::Error::new_spanned(lit.clone(), "float is too large for f32"))?)?,
+				"d" | "f64" => write!(&mut of, "{}", lit.base10_parse::<f64>().map_err(|_| syn::Error::new_spanned(lit.clone(), "float is too large for f64"))?)?,
+				_ => return Err(syn::Error::new_spanned(lit.clone(), "unrecognised suffix").into()),
 			}
 		},
 		Bool(lit) => write!(&mut of, "{:?}", lit.value)?,

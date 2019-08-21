@@ -59,6 +59,7 @@ pub fn instantiate_generic_type(ty: &syn::Type, tys: &[(&str, GpuTypeEnum)]) -> 
 		Type::Infer(_) => {},
 		Type::Macro(_) => {},
 		Type::Verbatim(_) => {},
+		_ => {}
 	}
 	ty
 }
@@ -67,17 +68,14 @@ pub fn instantiate_generic_arg(arg: &syn::FnArg, tys: &[(&str, GpuTypeEnum)]) ->
 	use syn::FnArg;
 
 	match arg {
-		FnArg::SelfRef(_) | FnArg::SelfValue(_) | FnArg::Inferred(_) => Some(arg.clone()),
-		FnArg::Captured(arg) => {
-			Some(FnArg::Captured(syn::ArgCaptured {
+		FnArg::Receiver(_) => Some(arg.clone()),
+		FnArg::Typed(arg) => {
+			Some(FnArg::Typed(syn::PatType {
+				attrs: arg.attrs.clone(),
 				pat: arg.pat.clone(),
 				colon_token: arg.colon_token.clone(),
-				ty: instantiate_generic_type(&arg.ty, tys)
+				ty: Box::new(instantiate_generic_type(&arg.ty, tys))
 			}))
-		},
-		FnArg::Ignored(__global__) => {
-			//FnArg::Ignored(instantiate_generic_type(ty, tys))
-			None
 		}
 	}
 }

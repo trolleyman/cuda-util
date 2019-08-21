@@ -352,6 +352,14 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// assert!(v.contains(&3));
 	/// assert!(!v.contains(&0));
 	/// ```
+	/// 
+	/// ```
+	/// # use cuda_util::*;
+	/// let v = GpuVec::from(&[0.0, 1.0, std::f32::NAN][..]);
+	/// assert!(v.contains(&0.0));
+	/// assert!(v.contains(&1.0));
+	/// assert!(!v.contains(&std::f32::NAN));  // NaN != NaN
+	/// ```
 	pub fn contains(&self, x: &T) -> bool where T: GpuType {
 		unsafe {
 			func::contains(*x, self.as_ptr(), self.len())
@@ -547,10 +555,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// # Examples
 	/// ```
 	/// # use cuda_util::GpuVec;
-	/// let data = vec![vec![1, 2, 3], vec![3, 4, 5]];
-	/// 
-	/// // Note that `v` is a GPU vector of CPU vectors. The CPU vectors still need to be
-	/// // moved to the CPU to be accessed.
+	/// let data = vec![1, 2, 3, 4];
 	/// let mut v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
 	/// assert_eq!(v.into_vec(), data);
 	/// ```

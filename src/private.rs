@@ -1,4 +1,5 @@
 //! Copied from https://github.com/rust-ndarray/ndarray/blob/eb82c93f0147df38e061597221ece3627f119a60/src/private.rs
+//! 
 //! The public parts of this private module are used to create traits
 //! that cannot be implemented outside of our own crate.  This way we
 //! can feel free to extend those traits without worrying about it
