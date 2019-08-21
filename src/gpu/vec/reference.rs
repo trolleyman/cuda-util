@@ -66,7 +66,7 @@ impl<'a, T> AsRef<[T]> for GpuSliceRef<'a, T> {
 
 impl<'a, T> fmt::Debug for GpuSliceRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		writeln!(f, "GpuSliceRef([<{:p}>; {}])", self.ptr, self.len())
+		write!(f, "GpuSliceRef([<{:p}>; {}])", self.ptr, self.len())
 	}
 }
 
@@ -175,7 +175,7 @@ impl<'a, T> AsMut<[T]> for GpuSliceMutRef<'a, T> {
 
 impl<'a, T> fmt::Debug for GpuSliceMutRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		writeln!(f, "GpuSliceMutRef([<{:p}>; {}])", self.ptr, self.len())
+		write!(f, "GpuSliceMutRef([<{:p}>; {}])", self.ptr, self.len())
 	}
 }
 
@@ -254,7 +254,7 @@ impl<'a, T> AsRef<T> for GpuRef<'a, T> {
 
 impl<'a, T> fmt::Debug for GpuRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		writeln!(f, "GpuRef(<{:p}>)", self.ptr)
+		write!(f, "GpuRef(<{:p}>)", self.ptr)
 	}
 }
 
@@ -368,7 +368,7 @@ impl<'a, T> AsMut<T> for GpuMutRef<'a, T> {
 
 impl<'a, T> fmt::Debug for GpuMutRef<'a, T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		writeln!(f, "GpuMutRef(<{:p}>)", self.ptr)
+		write!(f, "GpuMutRef(<{:p}>)", self.ptr)
 	}
 }
 

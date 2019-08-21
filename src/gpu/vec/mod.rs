@@ -204,7 +204,7 @@ impl<T> GpuSlice<T> {
 	/// ```
 	/// # use cuda_util::GpuVec;
 	/// let mut v = GpuVec::from(&[1, 2, 100, 4, 5][..]);
-	/// assert_eq!(v.get(2).unwrap(), 100);
+	/// assert_eq!(*v.get(2).unwrap(), 100);
 	/// ```
 	/// 
 	/// # Panics
@@ -220,8 +220,8 @@ impl<T> GpuSlice<T> {
 	/// # use cuda_util::GpuVec;
 	/// let mut v = GpuVec::from(&[1, 2, 3, 4, 5][..]);
 	/// {
-	/// 	let ref = v.get_mut(2).unwrap()
-	/// 	*ref = 100;
+	/// 	let mut r = v.get_mut(2).unwrap();
+	/// 	*r = 100;
 	/// }
 	/// assert_eq!(v.copy_to_vec(), &[1, 2, 100, 4, 5]);
 	/// ```
@@ -342,6 +342,16 @@ impl<T> GpuSlice<T> {
 	// TODO: split, split_mut, rsplit, rsplit_mut, splitn, splitn_mut, rsplitn, rsplitn_mut
 
 	/// Returns `true` if the slice contains an element with a given value.
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::*;
+	/// let v = GpuVec::from(&[5, 1, 3][..]);
+	/// assert!(v.contains(&5));
+	/// assert!(v.contains(&1));
+	/// assert!(v.contains(&3));
+	/// assert!(!v.contains(&0));
+	/// ```
 	pub fn contains(&self, x: &T) -> bool where T: GpuType {
 		unsafe {
 			func::contains(*x, self.as_ptr(), self.len())
@@ -416,7 +426,6 @@ impl<T> cmp::Eq for GpuSlice<T> where T: GpuType + cmp::Eq {}
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
 /// Contiguous growable array type, similar to `Vec<T>` but stored on the GPU.
-#[derive(Debug)]
 pub struct GpuVec<T> {
 	_type: PhantomData<T>,
 	ptr: *mut T,
@@ -897,6 +906,12 @@ impl<T> GpuVec<T> {
 	}
 }
 
+impl<T> fmt::Debug for GpuVec<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		write!(f, "GpuVec([<{:p}>; {}])", self.as_ptr(), self.len())
+	}
+}
+
 impl<T: Copy> From<&[T]> for GpuVec<T> {
 	fn from(data: &[T]) -> Self {
 		Self::try_from_slice(data).expect("CUDA error")
@@ -1113,5 +1128,19 @@ mod tests {
 		let data = vec![vec![1, 2, 3], vec![3, 4, 5]];
 		let v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
 		assert_eq!(v.into_vec(), data);
+	}
+	
+	#[test]
+	pub fn test_printing() {
+		let mut v = GpuVec::from(&[1, 2, 3][..]);
+		println!("{:?}", v);
+		println!("{:?}", v.as_slice());
+		println!("{:?}", v.as_slice_mut());
+		println!("{:?}", v.as_ptr());
+		println!("{:?}", v.as_mut_ptr());
+		println!("{:?}", v.get(1));
+		println!("{:?}", v.get_mut(2));
+		println!("{:?}", (&v[1..]).borrow_as_cpu_slice());
+		println!("{:?}", (&mut v[1..]).borrow_as_cpu_slice_mut());
 	}
 }
