@@ -939,6 +939,12 @@ impl<T: CopyIfStable + Copy + Clone> From<&[T]> for GpuVec<T> {
 // 	}
 // }
 
+impl<T: CopyIfStable> From<&Vec<T>> for GpuVec<T> where T: Copy {
+	fn from(data: &Vec<T>) -> Self {
+		Self::from(data.as_slice())
+	}
+}
+
 impl<T: CopyIfStable> From<Vec<T>> for GpuVec<T> {
 	fn from(data: Vec<T>) -> Self {
 		Self::try_from_vec(data).expect("CUDA error")
@@ -1050,6 +1056,48 @@ impl<T: CopyIfStable, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuVec<T> {
 
 // TODO: Vec ops: https://doc.rust-lang.org/std/vec/struct.Vec.html
 
+impl<T: CopyIfStable> cmp::PartialEq<GpuVec<T>> for GpuSlice<T> where T: GpuType {
+	fn eq(&self, other: &GpuVec<T>) -> bool { self == other.as_slice() }
+	fn ne(&self, other: &GpuVec<T>) -> bool { self != other.as_slice() }
+}
+impl<T: CopyIfStable> cmp::PartialEq<&GpuVec<T>> for GpuSlice<T> where T: GpuType {
+	fn eq(&self, other: &&GpuVec<T>) -> bool { self == other.as_slice() }
+	fn ne(&self, other: &&GpuVec<T>) -> bool { self != other.as_slice() }
+}
+impl<T: CopyIfStable> cmp::PartialEq<GpuVec<T>> for &GpuSlice<T> where T: GpuType {
+	fn eq(&self, other: &GpuVec<T>) -> bool { *self == other.as_slice() }
+	fn ne(&self, other: &GpuVec<T>) -> bool { *self != other.as_slice() }
+}
+
+impl<T: CopyIfStable> cmp::PartialEq<GpuSlice<T>> for GpuVec<T> where T: GpuType {
+	fn eq(&self, other: &GpuSlice<T>) -> bool { self.as_slice() == other }
+	fn ne(&self, other: &GpuSlice<T>) -> bool { self.as_slice() != other }
+}
+impl<T: CopyIfStable> cmp::PartialEq<&GpuSlice<T>> for GpuVec<T> where T: GpuType {
+	fn eq(&self, other: &&GpuSlice<T>) -> bool { self.as_slice() == *other }
+	fn ne(&self, other: &&GpuSlice<T>) -> bool { self.as_slice() != *other }
+}
+impl<T: CopyIfStable> cmp::PartialEq<GpuSlice<T>> for &GpuVec<T> where T: GpuType {
+	fn eq(&self, other: &GpuSlice<T>) -> bool { self.as_slice() == other }
+	fn ne(&self, other: &GpuSlice<T>) -> bool { self.as_slice() != other }
+}
+
+impl<T: CopyIfStable> cmp::PartialEq<GpuVec<T>> for GpuVec<T> where T: GpuType {
+	fn eq(&self, other: &GpuVec<T>) -> bool { self.as_slice() == other.as_slice() }
+	fn ne(&self, other: &GpuVec<T>) -> bool { self.as_slice() != other.as_slice() }
+}
+impl<T: CopyIfStable> cmp::PartialEq<&GpuVec<T>> for GpuVec<T> where T: GpuType {
+	fn eq(&self, other: &&GpuVec<T>) -> bool { self.as_slice() == other.as_slice() }
+	fn ne(&self, other: &&GpuVec<T>) -> bool { self.as_slice() != other.as_slice() }
+}
+impl<T: CopyIfStable> cmp::PartialEq<GpuVec<T>> for &GpuVec<T> where T: GpuType {
+	fn eq(&self, other: &GpuVec<T>) -> bool { self.as_slice() == other.as_slice() }
+	fn ne(&self, other: &GpuVec<T>) -> bool { self.as_slice() != other.as_slice() }
+}
+
+impl<T: CopyIfStable> cmp::Eq for GpuVec<T> where T: GpuType + cmp::Eq {}
+
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -1118,5 +1166,16 @@ mod tests {
 		println!("{:?}", v.get_mut(2));
 		println!("{:?}", (&v[1..]).borrow_as_cpu_slice());
 		println!("{:?}", (&mut v[1..]).borrow_as_cpu_slice_mut());
+	}
+	
+	#[test]
+	pub fn test_eq() {
+		let v: Vec<_> = (0..1_000_000).collect();
+		assert_eq!(GpuVec::from(&v), GpuVec::from(&v));
+		let mut z = GpuVec::from(&v);
+		*z.get_mut(500_000).unwrap() = 123;
+		assert_ne!(&z, GpuVec::from(&v));
+		assert!(z != GpuVec::from(&v));
+		println!("{:?}", v.len());
 	}
 }
