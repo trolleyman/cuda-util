@@ -1,8 +1,7 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/trolleyman/cuda-util/master/cuda-macros/res/logo_512.png")]
-//! __This is a private crate, meant to only be used by [`cuda-macros-impl`](https://docs.rs/cuda-macros-impl).__
+//! `proc-macro` crate that contains implementations for the macros in [`cuda-macros`](https://docs.rs/cuda-macros).
 //! 
-//! __Do NOT re-export anywhere else, as this messes up the paths emitted by the macros in
-//! [`cuda-macros-impl`](https://docs.rs/cuda-macros-impl).__
+//! It is not recommended to use this crate directly. Instead, use [`cuda-macros`](https://docs.rs/cuda-macros).
 
 extern crate cuda_macros_common as util;
 

@@ -4,12 +4,13 @@
 //! The [`build()`](fn.build.html) function is where the magic happens.
 //! 
 //! It essentially calls `cargo check` on the current crate with an environment variable
-//! (`CUDA_MACROS_OUT_DIR`) set to the location to output the bindings to. This is set to the
-//! current output dir. The macros in [`cuda-macros-impl`](https://docs.rs/cuda-macros-impl)
-//! are then called and output CUDA C code to this directory.
+//! (`CUDA_MACROS_OUT_DIR`) set to the current output dir.
 //! 
-//! Control returns to this build script which then compiles this CUDA code, and instructs
-//! Cargo to link to it.
+//! The macros in [`cuda-macros-impl`](https://docs.rs/cuda-macros-impl) are then called
+//! and output CUDA C code to this directory.
+//! 
+//! Control then returns to this build script which compiles the CUDA code using `nvcc`,
+//! and instructs Cargo to link to it when building the crate.
 
 extern crate cc;
 extern crate whoami;

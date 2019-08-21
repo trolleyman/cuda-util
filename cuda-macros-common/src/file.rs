@@ -2,31 +2,63 @@
 
 use std::io::{self, Read, Write, Seek, SeekFrom};
 
-/// Trait that represents a file-like object
+/// Trait that represents a file-like object.
 pub trait FileLike: Write + Read + Seek {}
 impl<T> FileLike for T where T: Write + Read + Seek {}
 
-/// Helper struct that allows for automatic indentation to a file
+/// Helper struct that allows for automatic indentation to a file.
+/// 
+/// Indentation is tabs, not spaces.
+/// 
+/// # Examples
+/// ```
+/// # use cuda_macros_common::file::FileLikeIndent;
+/// use std::io::{self, prelude::*};
+/// let mut out = vec![];
+/// {
+/// 	let mut out = io::Cursor::new(&mut out);
+/// 	let mut out = FileLikeIndent::new(&mut out, 0);
+/// 	writeln!(&mut out, "foo: {{");
+/// 	{
+/// 		let mut out = out.incr();
+/// 		writeln!(&mut out, "testing");
+/// 		writeln!(&mut out, "123");
+/// 	}
+/// 	writeln!(&mut out, "}}");
+/// }
+/// assert_eq!{out.as_slice(), "\
+/// foo: {
+/// 	testing
+/// 	123
+/// }
+/// ".as_bytes()}
+/// ```
 pub struct FileLikeIndent<'f, F: FileLike> {
 	f: &'f mut F,
 	indent: usize,
 }
 impl<'f, F> FileLikeIndent<'f, F> where F: FileLike {
+	/// Constructs a new `FileLikeIndent` with the specified output file and indentation.
 	pub fn new(f: &'f mut F, indent: usize) -> Self {
 		FileLikeIndent{ f, indent }
 	}
+	/// Returns a new `FileLikeIndent` object with the indent incremented by 1.
 	pub fn incr<'a, 'b>(&'a mut self) -> FileLikeIndent<'b, F> where 'a: 'b, 'f: 'a {
 		FileLikeIndent::new(self.f, self.indent + 1)
 	}
+	/// Returns a new `FileLikeIndent` object with the indent decremented by 1.
 	pub fn decr<'a, 'b>(&'a mut self) -> FileLikeIndent<'b, F> where 'a: 'b, 'f: 'a {
 		FileLikeIndent::new(self.f, self.indent.saturating_sub(1))
 	}
+	/// Returns a new `FileLikeIndent` object with the indent kept the same.
 	pub fn clone<'a, 'b>(&'a mut self) -> FileLikeIndent<'b, F> where 'a: 'b, 'f: 'a {
 		FileLikeIndent::new(self.f, self.indent)
 	}
+	/// Get an immutable reference to the underlying `T: FileLike` object.
 	pub fn get_ref(&self) -> &F {
 		&self.f
 	}
+	/// Get a mutable reference to the underlying `T: FileLike` object.
 	pub fn get_mut(&mut self) -> &mut F {
 		&mut self.f
 	}

@@ -125,15 +125,15 @@ impl_gpu_type!(i64 => I64);
 fn test_name() {
 	use crate::*;
 
-	assert_eq!(f32::gpu_type().rust_name(), "f32");
-	assert_eq!(f64::gpu_type().rust_name(), "f64");
+	assert_eq!(0.0f32.gpu_type().rust_name(), "f32");
+	assert_eq!(0.0f64.gpu_type().rust_name(), "f64");
 
-	assert_eq!(u8 ::gpu_type().rust_name(), "u8");
-	assert_eq!(i8 ::gpu_type().rust_name(), "i8");
-	assert_eq!(u16::gpu_type().rust_name(), "u16");
-	assert_eq!(i16::gpu_type().rust_name(), "i16");
-	assert_eq!(u32::gpu_type().rust_name(), "u32");
-	assert_eq!(i32::gpu_type().rust_name(), "i32");
-	assert_eq!(u64::gpu_type().rust_name(), "u64");
-	assert_eq!(i64::gpu_type().rust_name(), "i64");
+	assert_eq!(0u8 .gpu_type().rust_name(), "u8");
+	assert_eq!(0i8 .gpu_type().rust_name(), "i8");
+	assert_eq!(0u16.gpu_type().rust_name(), "u16");
+	assert_eq!(0i16.gpu_type().rust_name(), "i16");
+	assert_eq!(0u32.gpu_type().rust_name(), "u32");
+	assert_eq!(0i32.gpu_type().rust_name(), "i32");
+	assert_eq!(0u64.gpu_type().rust_name(), "u64");
+	assert_eq!(0i64.gpu_type().rust_name(), "i64");
 }
