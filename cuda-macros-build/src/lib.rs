@@ -10,8 +10,6 @@
 //! 
 //! Control returns to this build script which then compiles this CUDA code, and instructs
 //! Cargo to link to it.
-//! 
-//! **TEST**
 
 extern crate cc;
 extern crate whoami;
