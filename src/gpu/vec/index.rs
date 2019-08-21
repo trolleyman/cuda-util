@@ -1,10 +1,10 @@
 
 use std::ops;
 
-use super::GpuSlice;
+use super::{CopyIfStable, GpuSlice};
 
 
-fn assert_range_valid_msg<T>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> Result<(), String> {
+fn assert_range_valid_msg<T: CopyIfStable>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> Result<(), String> {
 	if range.start > range.end {
 		Err(format!("slice index starts at {} but ends at {}", range.start, range.end))
 	} else if range.start >= slice.len() {
@@ -16,7 +16,7 @@ fn assert_range_valid_msg<T>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> 
 	}
 }
 
-fn assert_range_valid<T>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> Result<(), ()> {
+fn assert_range_valid<T: CopyIfStable>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> Result<(), ()> {
 	if range.start > range.end {
 		Err(())
 	} else if range.start >= slice.len() {
@@ -77,14 +77,14 @@ fn assert_range_valid<T>(range: &ops::Range<usize>, slice: &GpuSlice<T>) -> Resu
 */
 
 /// Helper trait to allow for slices to be taken easily.
-pub trait GpuSliceRange<T> {
+pub trait GpuSliceRange<T: CopyIfStable> {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T>;
 	fn slice_mut<'a>(&'_ self, slice: &'a mut GpuSlice<T>) -> &'a mut GpuSlice<T>;
 
 	fn try_slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> Option<&'a GpuSlice<T>>;
 	fn try_slice_mut<'a>(&'_ self, slice: &'a mut GpuSlice<T>) -> Option<&'a mut GpuSlice<T>>;
 }
-impl<T> GpuSliceRange<T> for ops::Range<usize> {
+impl<T: CopyIfStable> GpuSliceRange<T> for ops::Range<usize> {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		match assert_range_valid_msg(self, slice) {
 			Ok(()) => unsafe { GpuSlice::from_raw_parts(slice.as_ptr().add(self.start), self.end - self.start) },
@@ -107,7 +107,7 @@ impl<T> GpuSliceRange<T> for ops::Range<usize> {
 		Some(unsafe { GpuSlice::from_raw_parts_mut(slice.as_mut_ptr().add(self.start), self.end - self.start) })
 	}
 }
-impl<T> GpuSliceRange<T> for ops::RangeFrom<usize> {
+impl<T: CopyIfStable> GpuSliceRange<T> for ops::RangeFrom<usize> {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		ops::Range{start: self.start, end: slice.len() }.slice(slice)
 	}
@@ -122,7 +122,7 @@ impl<T> GpuSliceRange<T> for ops::RangeFrom<usize> {
 		ops::Range{start: self.start, end: slice.len() }.try_slice_mut(slice)
 	}
 }
-impl<T> GpuSliceRange<T> for ops::RangeTo<usize> {
+impl<T: CopyIfStable> GpuSliceRange<T> for ops::RangeTo<usize> {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		ops::Range{start: 0, end: self.end }.slice(slice)
 	}
@@ -137,7 +137,7 @@ impl<T> GpuSliceRange<T> for ops::RangeTo<usize> {
 		ops::Range{start: 0, end: self.end }.try_slice_mut(slice)
 	}
 }
-impl<T> GpuSliceRange<T> for ops::RangeFull {
+impl<T: CopyIfStable> GpuSliceRange<T> for ops::RangeFull {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		ops::Range{start: 0, end: slice.len() }.slice(slice)
 	}
@@ -152,7 +152,7 @@ impl<T> GpuSliceRange<T> for ops::RangeFull {
 		ops::Range{start: 0, end: slice.len() }.try_slice_mut(slice)
 	}
 }
-impl<T> GpuSliceRange<T> for ops::RangeInclusive<usize> {
+impl<T: CopyIfStable> GpuSliceRange<T> for ops::RangeInclusive<usize> {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		ops::Range{start: *self.start(), end: *self.end() + 1 }.slice(slice)
 	}
@@ -167,7 +167,7 @@ impl<T> GpuSliceRange<T> for ops::RangeInclusive<usize> {
 		ops::Range{start: *self.start(), end: *self.end() + 1 }.try_slice_mut(slice)
 	}
 }
-impl<T> GpuSliceRange<T> for ops::RangeToInclusive<usize> {
+impl<T: CopyIfStable> GpuSliceRange<T> for ops::RangeToInclusive<usize> {
 	fn slice<'a>(&'_ self, slice: &'a GpuSlice<T>) -> &'a GpuSlice<T> {
 		ops::Range{start: 0, end: self.end + 1 }.slice(slice)
 	}

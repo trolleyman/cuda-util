@@ -1043,7 +1043,7 @@ mod tests {
 		#[derive(Debug, Clone, PartialEq, Eq)]
 		pub struct DropThing(i32, Option<*mut i32>);
 		impl Drop for DropThing {
-			unsafe fn drop(&mut self) {
+			fn drop(&mut self) {
 				println!("Dropping thing: *{:p} = {:?}", self.1.unwrap_or(::std::ptr::null_mut()), self.0);
 				if let Some(ptr) = self.1 {
 					unsafe {
@@ -1053,9 +1053,9 @@ mod tests {
 			}
 		}
 		
-		let ret = 0i32;
+		let mut ret = 0i32;
 		{
-			let data = vec![DropThing(1, &mut ret as *mut i32), DropThing(2, None), DropThing(3, None)];
+			let data = vec![DropThing(1, Some(&mut ret as *mut i32)), DropThing(2, None), DropThing(3, None)];
 			println!("a");
 			let v = GpuVec::from(data.clone());
 			println!("b");
