@@ -14,6 +14,7 @@ Attribute(s) | CPU callable | GPU callable | Runs on
 
 The `#[host]` and `#[device]` attributes can be combined, in which case two versions will be generated, one for the host and one for the device.
 The function will be run on whichever system it was called from.
-`TODO: Mention __CUDA_ARCH__ & implement #[cfg(cuda_arch)]`.
+
+**TODO**: Mention `__CUDA_ARCH__` & implement `#[cfg(cuda_arch)]`
 
 In CUDA terminology, the CPU is the host, and the GPU is the device.
