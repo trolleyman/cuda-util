@@ -1,3 +1,17 @@
+#![doc(html_logo_url = "https://raw.githubusercontent.com/trolleyman/cuda-util/master/cuda-macros-build/res/logo_512.png")]
+//! Outputs & compiles the CUDA-annotated functions in the current crate.
+//! 
+//! The [`build()`](fn.build.html) function is where the magic happens.
+//! 
+//! It essentially calls `cargo check` on the current crate with an environment variable
+//! (`CUDA_MACROS_OUT_DIR`) set to the location to output the bindings to. This is set to the
+//! current output dir. The macros in [`cuda-macros-impl`](https://docs.rs/cuda-macros-impl)
+//! are then called and output CUDA C code to this directory.
+//! 
+//! Control returns to this build script which then compiles this CUDA code, and instructs
+//! Cargo to link to it.
+//! 
+//! **TEST**
 
 extern crate cc;
 extern crate whoami;
@@ -20,21 +34,25 @@ lazy_static! {
 	static ref BUILD_DIRNAME: String = format!("rust_cuda-macros_build_{}_{}_{}", whoami::username(), std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
 }
 
+/// Set of build options to apply when building this crate.
 pub struct BuildOptions {
 	pub(crate) features: Vec<String>,
 }
 impl BuildOptions {
+	/// Constructs the default build options.
 	pub fn new() -> Self {
 		BuildOptions {
 			features: Vec::new(),
 		}
 	}
 
+	/// Adds a feature to enable with the specified name.
 	pub fn feature(&mut self, feature: impl Into<String>) -> &mut Self {
 		self.features.push(feature.into());
 		self
 	}
 
+	/// Performs the build with the specified options.
 	pub fn build(self) {
 		build_opt(self);
 	}
@@ -95,6 +113,7 @@ fn is_cargo_cmd_valid() -> bool {
 	}
 }
 
+/// Performs the build of the current crate with the default [`BuildOptions`](struct.BuildOptions.html).
 pub fn build() {
 	build_opt(BuildOptions::default());
 }
