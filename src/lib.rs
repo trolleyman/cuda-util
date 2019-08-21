@@ -16,3 +16,11 @@ pub use cuda_macros::*;
 pub use tensor::*;
 pub use cpu::*;
 pub use gpu::*;
+
+pub mod prelude {
+	pub use super::{GpuVec, GpuSlice};
+	pub use super::ExecutionConfig;
+	pub use super::{Dim3, dim3};
+	
+	pub use super::{Tensor, TensorTrait, CpuTensor, GpuTensor};
+}
