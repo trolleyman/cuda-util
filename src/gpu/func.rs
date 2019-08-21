@@ -55,7 +55,7 @@ pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: GpuT
 #[global]
 pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: usize) where T: GpuType {
 	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
-	if (vec[i] == x) {
+	if (i < len && vec[i] == x) {
 		*found = true;
 	}
 }
