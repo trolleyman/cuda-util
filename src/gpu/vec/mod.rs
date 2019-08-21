@@ -423,10 +423,22 @@ impl<T: CopyIfStable, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuSlice<T> {
 }
 impl<T: CopyIfStable> cmp::PartialEq<GpuSlice<T>> for GpuSlice<T> where T: GpuType {
 	fn eq(&self, other: &GpuSlice<T>) -> bool {
-		unsafe { func::eq(self.as_ptr(), self.len(), other.as_ptr(), other.len()) }
+		if self.len() != other.len() {
+			false
+		} else {
+			unsafe {
+				func::eq(self.as_ptr(), other.as_ptr(), self.len())
+			}
+		}
 	}
 	fn ne(&self, other: &GpuSlice<T>) -> bool {
-		unsafe { func::ne(self.as_ptr(), self.len(), other.as_ptr(), other.len()) }
+		if self.len() != other.len() {
+			true
+		} else {
+			unsafe {
+				func::ne(self.as_ptr(), other.as_ptr(), self.len())
+			}
+		}
 	}
 }
 impl<T: CopyIfStable> cmp::Eq for GpuSlice<T> where T: GpuType + cmp::Eq {}

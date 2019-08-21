@@ -55,25 +55,35 @@ pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: GpuT
 #[global]
 pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: usize) where T: GpuType {
 	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
-	if (i < len && vec[i] == x) {
+	if i < len && vec[i] == x {
 		*found = true;
 	}
 }
 
-pub unsafe fn eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: GpuType {
-	unimplemented!()
+pub unsafe fn eq<T>(lhs: *const T, rhs: *const T, len: usize) -> bool where T: GpuType {
+	TEMP_DEVICE_STORAGE.with(|tmp| {
+		let mut tmp = tmp.borrow_mut();
+		tmp.clear();
+		tmp.push(0);
+		let conf = ExecutionConfig::from_num_threads(len as u32);
+		global_eq(conf, tmp.as_mut_ptr() as *mut bool, lhs, rhs, len);
+		*tmp.get(0).unwrap() == 0
+	})
+}
+
+#[global]
+pub unsafe fn global_eq<T>(ret_neq: *mut bool, lhs: *const T, rhs: *const T, len: usize) where T: GpuType {
+	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
+	if i < len && lhs[i] != rhs[i] {
+		*ret_neq = true;
+	}
+}
+
+pub unsafe fn ne<T>(lhs: *const T, rhs: *const T, len: usize) -> bool where T: GpuType {
+	!eq(lhs, rhs, len)
 }
 
 // #[global]
-// pub unsafe fn global_eq<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: GpuType {
-	
-// }
-
-pub unsafe fn ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) -> bool where T: GpuType {
-	unimplemented!()
-}
-
-// #[global]
-// pub unsafe fn global_ne<T>(lhs: *const T, lhs_len: usize, rhs: *const T, rhs_len: usize) where T: GpuType {
+// pub unsafe fn global_ne<T>(lhs: *const T, rhs: *const T, len: usize) where T: GpuType {
 	
 // }
