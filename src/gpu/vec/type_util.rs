@@ -1,7 +1,11 @@
 
 use cfg_if::cfg_if;
 
-
+/// Normal users of this crate should read this as a `Copy` type bound.
+/// 
+/// However, if the `unstable` feature is enabled, then this trait has no bound.
+/// The main type that uses this is the [`GpuVec`](struct.GpuVec.html), and through
+/// it the [`GpuSlice`](struct.GpuSlice.html) type.
 pub trait CopyIfStable {
 	private_decl!();
 }

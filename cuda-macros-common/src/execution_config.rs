@@ -108,17 +108,17 @@ fn div_ceil(x: usize, divisor: usize) -> usize {
 /// ```
 /// # use cuda::runtime::CudaStream;
 /// # use cuda_macros_common::ExecutionConfig;
-/// ExecutionConfig::from((1, 1));              // 1x1x1 grid of 1x1x1 block, 0 bytes of shared memory, default stream
-/// ExecutionConfig::from((1, 1, 16usize));     // 1x1x1 grid of 1x1x1 block, 16 bytes of shared memory, default stream
+/// ExecutionConfig::from((1, 1));              // 1x1x1 grid of 1x1x1 blocks, 0 bytes of shared memory, default stream
+/// ExecutionConfig::from((1, 1, 16usize));     // 1x1x1 grid of 1x1x1 blocks, 16 bytes of shared memory, default stream
 /// ExecutionConfig::from((1, 1, 16usize, CudaStream::create().unwrap()));
 ///                                             // 1x1x1 grid of 1x1x1 block, 16 bytes of shared memory, custom stream
-/// ExecutionConfig::from((1, 16));             // 1x1x1 grid of 16x1x1 block, 16 threads total
-/// ExecutionConfig::from((16, 16));            // 1x1x1 grid of 16x16x1 blocks, 16*16 = 256 threads total
-/// ExecutionConfig::from((1, (4, 4)));         // 1x1x1 grid of 4x4 blocks, 4*4 = 16 threads total
-/// ExecutionConfig::from(((4, 4), 1));         // 4x4x1 grid of 1x1x1 blocks, 1*4*4 = 16 threads total
-/// ExecutionConfig::from(((4, 4), (4, 4)));    // 4x4 grid of 4x4 blocks, 4*4 * 4*4 = 16*16 = 256 threads total
+/// ExecutionConfig::from((1, 16));             // 1x1x1 grid of 16x1x1 blocks, 16 threads total
+/// ExecutionConfig::from((16, 16));            // 16x1x1 grid of 16x1x1 blocks, 16*16 = 256 threads total
+/// ExecutionConfig::from((1, (4, 4)));         // 1x1x1 grid of 4x4x1 blocks, 4*4 = 16 threads total
+/// ExecutionConfig::from(((4, 4), 1));         // 4x4x1 grid of 1x1x1 blocks, 4*4 = 16 threads total
+/// ExecutionConfig::from(((4, 4), (4, 4)));    // 4x4x1 grid of 4x4x1 blocks, 4*4 * 4*4 = 16*16 = 256 threads total
 /// ExecutionConfig::from(([2, 2], [2, 3, 4])); // You can also use fixed-length arrays
-///                                             // 2x3x4 blocks, 2x2 grids, 2*3*4 * 2*2 = 24*4 = 96 threads total
+///                                             // 2x2x1 grid of 2x3x4 blocks, 2*3*4 * 2*2 = 24*4 = 96 threads total
 /// ```
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -133,6 +133,7 @@ pub struct ExecutionConfig {
 	pub cuda_stream: cudaStream_t,
 }
 impl ExecutionConfig {
+	/// Number of threads per block, by default. Set to `1024`.
 	pub const DEFAULT_NUM_THREADS_PER_BLOCK: u32 = 1024;
 
 	/// Returns an `ExecutionConfig` with `num_threads` **or more** threads total, arranged in

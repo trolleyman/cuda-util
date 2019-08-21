@@ -20,9 +20,13 @@ pub use self::type_util::CopyIfStable;
 
 /// Slice of [`GpuVec`](struct.GpuVec.html).
 /// 
-/// [`Unsize`](https://doc.rust-lang.org/std/marker/trait.Unsize.html)d type that can be only accessed via a reference (e.g. `&mut GpuSlice`).
+/// [`Unsize`](https://doc.rust-lang.org/std/marker/trait.Unsize.html)d type that can be only accessed via a reference
+/// (e.g. `&mut GpuSlice`).
 /// 
 /// Can be created by dereferencing a GpuVec, see [`GpuVec::deref()`](struct.GpuVec.html#method.deref).
+/// 
+/// `T` is bound by the [`CopyIfStable`](trait.CopyIfStable.html) trait. See the [`GpuVec`](struct.GpuVec.html)
+/// documentation for details.
 pub struct GpuSlice<T: CopyIfStable>(ManuallyDrop<[T]>);
 impl<T: CopyIfStable> GpuSlice<T> {
 	/// Constructs an immutable GpuSlice from raw parts.
@@ -446,6 +450,15 @@ impl<T: CopyIfStable> cmp::Eq for GpuSlice<T> where T: GpuType + cmp::Eq {}
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
 /// Contiguous growable array type, similar to `Vec<T>` but stored on the GPU.
+/// 
+/// `T` is bound by the [`CopyIfStable`](trait.CopyIfStable) trait. This is so that `T: Copy` by default,
+/// but unbounded when the `unstable` feature is activated. The `unstable` feature is automatically enabled
+/// when a nightly compiler is detected.
+/// 
+/// Specialization ([issue #31844](https://github.com/rust-lang/rust/issues/31844)) is needed for `T` to be unbounded, as
+/// otherwise the `drop()` function is hugely inefficient. Without it the library must assume that every type
+/// has a `Drop` bound, and is forced to move it to the CPU before dropping it. Since this happens for *every* `GpuVec`,
+/// this is a large performance penalty.
 pub struct GpuVec<T: CopyIfStable> {
 	_type: PhantomData<T>,
 	ptr: *mut T,
