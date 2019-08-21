@@ -1,11 +1,11 @@
 
-use lazy_static::lazy_static;
+use std::cell::RefCell;
 
 use crate::*;
 
 
-lazy_static!{
-	static ref TEMP_DEVICE_STORAGE: GpuVec<u8> = GpuVec::new();
+thread_local! {
+	pub static TEMP_DEVICE_STORAGE: RefCell<GpuVec<u8>> = RefCell::new(GpuVec::new());
 }
 
 
@@ -42,11 +42,14 @@ unsafe fn global_reverse_vector(vec: *mut u8, elem_size: u32, len: u32) {
 }
 
 pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: GpuType {
-	TEMP_DEVICE_STORAGE.clear();
-	TEMP_DEVICE_STORAGE.push(0);
-	let conf = ExecutionConfig::from_num_threads(len as u32);
-	global_contains(conf, TEMP_DEVICE_STORAGE.as_mut_ptr() as *mut bool, x, vec, len);
-	*TEMP_DEVICE_STORAGE.get(0).unwrap() != 0
+	TEMP_DEVICE_STORAGE.with(|tmp| {
+		let mut tmp = tmp.borrow_mut();
+		tmp.clear();
+		tmp.push(0);
+		let conf = ExecutionConfig::from_num_threads(len as u32);
+		global_contains(conf, tmp.as_mut_ptr() as *mut bool, x, vec, len);
+		*tmp.get(0).unwrap() != 0
+	})
 }
 
 #[global]

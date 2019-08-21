@@ -223,7 +223,8 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 	if fn_info.is_generic() && !is_wrapper {
 		writeln!(of, "{}", fn_info.c_template_decl)?;
 	}
-	write!(of, "EXTERN_C {}{} {}({})", attr, ret, fn_ident, args)?;
+	let extn = if is_wrapper { "EXTERN_C " } else { "" };
+	write!(of, "{}{}{} {}({})", extn, attr, ret, fn_ident, args)?;
 	Ok(())
 }
 

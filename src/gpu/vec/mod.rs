@@ -64,7 +64,9 @@ impl<T> GpuSlice<T> {
 	/// # Panics
 	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn borrow_as_cpu_slice<'a>(&'a self) -> GpuSliceRef<'a, T> {
-		GpuSliceRef::from_device_ptr(self.as_ptr(), self.len()).expect("CUDA error")
+		unsafe {
+			GpuSliceRef::from_device_ptr(self.as_ptr(), self.len()).expect("CUDA error")
+		}
 	}
 
 	/// Copies the data in the slice to the CPU and returns it as a mutable `GpuSliceRef`.
@@ -75,7 +77,9 @@ impl<T> GpuSlice<T> {
 	/// # Panics
 	/// Panics if a CUDA error is encountered while performing this operation.
 	pub fn borrow_as_cpu_slice_mut<'a>(&'a mut self) -> GpuSliceMutRef<'a, T> {
-		GpuSliceMutRef::from_device_ptr(self.as_mut_ptr(), self.len()).expect("CUDA error")
+		unsafe {
+			GpuSliceMutRef::from_device_ptr(self.as_mut_ptr(), self.len()).expect("CUDA error")
+		}
 	}
 
 	/// Clones the data in the slice to the CPU and returns it as a `Vec`.
@@ -254,7 +258,7 @@ impl<T> GpuSlice<T> {
 	/// Note that this is *not* a valid pointer. This is a device pointer, that points to data on the GPU. It can only be used in CUDA functions that explicitly mention a requirement for a device pointer.
 	/// 
 	/// The caller is also responsible for the lifetime of the pointer.
-	pub const fn as_ptr(&self) -> *const T {
+	pub fn as_ptr(&self) -> *const T {
 		self.0.as_ptr()
 	}
 
@@ -292,7 +296,7 @@ impl<T> GpuSlice<T> {
 		unsafe {
 			let a_ptr = self.as_mut_ptr().add(a);
 			let b_ptr = self.as_mut_ptr().add(b);
-			let tmp = cuda_alloc_device::<T>(1).expect("CUDA error");
+			let mut tmp = cuda_alloc_device::<T>(1).expect("CUDA error");
 			cuda_memcpy(tmp, a_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			cuda_memcpy(a_ptr, b_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
 			cuda_memcpy(b_ptr, tmp, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
@@ -312,7 +316,9 @@ impl<T> GpuSlice<T> {
 	/// assert_eq!(&v.copy_to_vec(), &cpu_vec);
 	/// ```
 	pub fn reverse(&mut self) {
-		func::reverse_vector(self.as_mut_ptr(), self.len());
+		unsafe {
+			func::reverse_vector(self.as_mut_ptr(), self.len());
+		}
 	}
 
 	// TODO: iter(&self)
@@ -337,7 +343,9 @@ impl<T> GpuSlice<T> {
 
 	/// Returns `true` if the slice contains an element with a given value.
 	pub fn contains(&self, x: &T) -> bool where T: GpuType {
-		func::contains(*x, self.as_ptr(), self.len())
+		unsafe {
+			func::contains(*x, self.as_ptr(), self.len())
+		}
 	}
 
 	/// Returns `true` if `needle` is a prefix of the slice.
@@ -730,8 +738,9 @@ impl<T> GpuVec<T> {
 			}
 			
 			// Switch memory buffers
-			let old_ptr = self.ptr;
+			let mut old_ptr = self.ptr;
 			self.ptr = dst;
+			self.len += 1;
 			cuda_free_device(&mut old_ptr).expect("CUDA error");
 		}
 	}
@@ -867,7 +876,7 @@ impl<T> GpuVec<T> {
 	// TODO: Everything in https://doc.rust-lang.org/std/vec/struct.Vec.html below clear()
 
 	/// Deallocates the memory held by the `GpuVec<T>`
-	pub fn free(self) -> CudaResult<()> {
+	pub fn free(mut self) -> CudaResult<()> {
 		let e = if <T as HasDrop>::has_drop() {
 			// `Drop` requires that the data is on the CPU, so copy the data to a `Vec` before dropping
 			let mut vec = Vec::with_capacity(self.len());

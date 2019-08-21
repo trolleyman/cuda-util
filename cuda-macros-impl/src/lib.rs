@@ -184,7 +184,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		let mut match_inputs = vec!{};
 		for (_, ident) in match_pattern_types.iter() {
 			match_inputs.push(quote!{
-				<#ident as ::cuda_macros::GpuType>::gpu_type(&#ident)
+				::cuda_macros::GpuType::gpu_type(&#ident)
 			});
 		}
 		let match_input = quote!{ (#(#match_inputs,)*) };
