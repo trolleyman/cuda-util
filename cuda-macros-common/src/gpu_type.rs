@@ -19,25 +19,15 @@ static CUDA_NUMBER_TYPES: &'static [GpuTypeEnum] = &[
 /// Enumeration of possible number types that can be sent to CUDA.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum GpuTypeEnum {
-	/// f32
 	F32(f32),
-	/// f64
 	F64(f64),
-	/// u8
 	U8(u8),
-	/// i8
 	I8(i8),
-	/// u16
 	U16(u16),
-	/// i16
 	I16(i16),
-	/// i32
 	U32(u32),
-	/// u32
 	I32(i32),
-	/// i64
 	U64(u64),
-	/// u64
 	I64(i64),
 }
 impl GpuTypeEnum {

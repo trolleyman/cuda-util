@@ -1,3 +1,4 @@
+//! Reference types that allow for easy modification of a `GpuVec` or `GpuSlice`.
 
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};

@@ -6,22 +6,29 @@ extern crate ndarray;
 
 extern crate cuda_macros;
 
-mod rcuda;
 #[macro_use]
 mod private;
-mod tensor;
-mod cpu;
-mod gpu;
+mod rcuda;
 
-pub use cuda_macros::*;
+mod tensor;
 pub use tensor::*;
+mod cpu;
 pub use cpu::*;
+mod gpu;
 pub use gpu::*;
 
+pub use cuda_macros::*;
+
+
 pub mod prelude {
-	pub use super::{GpuVec, GpuSlice};
-	pub use super::ExecutionConfig;
-	pub use super::{Dim3, dim3};
+	//! Useful items needed for all crates using `cuda_util`
+	#[doc(no_inline)]
+	pub use cuda_macros::ExecutionConfig;
+	#[doc(no_inline)]
+	pub use cuda_macros::{Dim3, dim3};
 	
+	#[doc(no_inline)]
+	pub use super::{GpuVec, GpuSlice};
+	#[doc(no_inline)]
 	pub use super::{Tensor, TensorTrait, CpuTensor, GpuTensor};
 }

@@ -12,8 +12,8 @@ use super::func;
 
 mod index;
 pub use self::index::*;
-mod reference;
-pub use self::reference::*;
+pub mod reference;
+use self::reference::*;
 mod type_util;
 pub use self::type_util::CopyIfStable;
 
