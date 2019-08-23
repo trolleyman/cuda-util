@@ -30,7 +30,7 @@ use serde_json::Value;
 
 
 lazy_static! {
-	static ref BUILD_DIRNAME: String = format!("rust_cuda-macros_build_{}_{}_{}", whoami::username(), std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
+	static ref BUILD_DIRNAME: String = format!("cuda-macros_build_{}_{}", std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
 }
 
 /// Set of build options to apply when building this crate.
@@ -77,7 +77,7 @@ fn should_cleanup_dir(p: impl AsRef<Path>) -> io::Result<bool> {
 		return Ok(false);
 	}
 	let name = name.map(|p| p.to_string_lossy().to_string()).unwrap_or("".to_string());
-	if !name.starts_with("rust_cuda-macros_build_") || name == BUILD_DIRNAME.as_str() {
+	if !name.starts_with("cuda-macros_build_") || name == BUILD_DIRNAME.as_str() {
 		return Ok(false);
 	}
 
@@ -133,7 +133,9 @@ fn build_opt(opt: BuildOptions) {
 
 	// Create target dir that is deterministic on the package name & version being built
 	// This allows incremental build, without clashing with the current cargo.exe that it is building
-	let target_dir = std::env::temp_dir()
+	let target_dir = crate_out_dir
+		.join("..").join("..").join("..").join("..")
+		.canonicalize().unwrap()
 		.join(&*BUILD_DIRNAME);
 	if !target_dir.is_dir() {
 		fs::create_dir_all(&target_dir).unwrap();
