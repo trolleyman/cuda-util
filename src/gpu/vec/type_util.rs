@@ -63,12 +63,12 @@ cfg_if! {
 			}
 		}
 		/// Returns `true` if the bound `T: Copy` is satisfied, or if the `unstable` feature is not enabled.
-		pub fn has_copy_or_stable<T: CopyIfStable>() -> bool {
+		pub fn has_copy<T: CopyIfStable>() -> bool {
 			<T as has_copy::HasCopy>::has_copy()
 		}
 	} else {
 		/// Returns `true` if the bound `T: Copy` is satisfied, or if the `unstable` feature is not enabled.
-		pub fn has_copy_or_stable<T: CopyIfStable>() -> bool {
+		pub fn has_copy<T: CopyIfStable>() -> bool {
 			true
 		}
 	}
@@ -92,12 +92,12 @@ cfg_if! {
 			}
 		}
 		/// Returns `true` if the bound `T: Drop` is satisfied, and if the `unstable` feature is not enabled.
-		pub fn has_drop_and_stable<T: CopyIfStable>() -> bool {
+		pub fn has_drop<T: CopyIfStable>() -> bool {
 			<T as has_drop::HasDrop>::has_drop()
 		}
 	} else {
 		/// Returns `true` if the bound `T: Drop` is satisfied, and if the `unstable` feature is not enabled.
-		pub fn has_drop_and_stable<T: CopyIfStable>() -> bool {
+		pub fn has_drop<T: CopyIfStable>() -> bool {
 			false
 		}
 	}

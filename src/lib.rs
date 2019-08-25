@@ -28,6 +28,8 @@ pub mod prelude {
 	pub use cuda_macros::{Dim3, dim3};
 	
 	#[doc(no_inline)]
+	pub use super::gvec;
+	#[doc(no_inline)]
 	pub use super::{GpuVec, GpuSlice};
 	#[doc(no_inline)]
 	pub use super::{Tensor, TensorTrait, CpuTensor, GpuTensor};

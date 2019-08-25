@@ -18,6 +18,21 @@ mod type_util;
 pub use self::type_util::CopyIfStable;
 
 
+/// Creates a [`GpuVec`](struct.GpuVec.html) from the arguments.
+/// 
+/// Has the same syntax as [`std::vec!`](https://doc.rust-lang.org/std/macro.vec.html).
+#[macro_export]
+macro_rules! gvec {
+    ($elem:expr; $n:expr) => (
+        $crate::GpuVec::from(vec![$elem; $n])
+    );
+    ($($x:expr),*) => (
+		$crate::GpuVec::from(vec![$($x),*])
+    );
+    ($($x:expr,)*) => ($crate::gvec![$($x),*])
+}
+
+
 /// Slice of [`GpuVec`](struct.GpuVec.html).
 /// 
 /// [`Unsize`](https://doc.rust-lang.org/std/marker/trait.Unsize.html)d type that can be only accessed via a reference
@@ -37,7 +52,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 		std::mem::transmute(std::slice::from_raw_parts(data, len))
 	}
 
-	/// Constructs a mutable GpuSlice from raw parts.
+	/// Constructs a mutable GPU slice from raw parts.
 	/// 
 	/// # Safety
 	/// `data` must point to a device buffer of at least size `len` that lives for at least lifetime `'a`.
@@ -45,54 +60,28 @@ impl<T: CopyIfStable> GpuSlice<T> {
 		std::mem::transmute(std::slice::from_raw_parts_mut(data, len))
 	}
 
-	/// Copies the data in the slice to the CPU and returns it as a `Vec`.
+	/// Copies the data in the slice to the host and returns it as a vector.
+	#[cfg_attr(feature="unstable", doc="\nIf `T: !Copy`, `clone()` is called for each element.")]
 	/// 
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
-	pub fn copy_to_vec(&self) -> Vec<T> where T: Copy {
-		let mut v = Vec::with_capacity(self.len());
-		unsafe {
-			cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
-			v.set_len(self.len());
-		}
-		v
-	}
-
-	/// Copies the data in the slice to the CPU and returns it as a `GpuSliceRef`.
-	/// The lifetime of this reference is linked to the lifetime of the `GpuSlice`.
-	/// 
-	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
-	/// 
-	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
-	pub fn borrow_as_cpu_slice<'a>(&'a self) -> GpuSliceRef<'a, T> {
-		unsafe {
-			GpuSliceRef::from_device_ptr(self.as_ptr(), self.len()).expect("CUDA error")
+	/// Panics if a CUDA error occurs.
+	pub fn to_vec(&self) -> Vec<T> where T: Clone {
+		if type_util::has_copy::<T>() {
+			// If `T: Copy`, then we don't need to call `clone()` for each element
+			let mut v = Vec::with_capacity(self.len());
+			unsafe {
+				cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), self.len(), CudaMemcpyKind::DeviceToHost).expect("CUDA error");
+				v.set_len(self.len());
+			}
+			v
+		} else {
+			self.clone_to_vec()
 		}
 	}
 
-	/// Copies the data in the slice to the CPU and returns it as a mutable `GpuSliceRef`.
-	/// The lifetime of this reference is linked to the lifetime of the `GpuSlice`.
-	/// 
-	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
-	/// 
-	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
-	pub fn borrow_as_cpu_slice_mut<'a>(&'a mut self) -> GpuSliceMutRef<'a, T> {
-		unsafe {
-			GpuSliceMutRef::from_device_ptr(self.as_mut_ptr(), self.len()).expect("CUDA error")
-		}
-	}
-
-	/// Clones the data in the slice to the CPU and returns it as a `Vec`.
-	/// 
-	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
-	/// 
-	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
-	pub fn clone_to_vec(&self) -> Vec<T> where T: Clone {
+	fn clone_to_vec(&self) -> Vec<T> where T: Clone {
 		let mut v: Vec<ManuallyDrop<T>> = Vec::with_capacity(self.len());
 		let mut ret: Vec<T> = Vec::with_capacity(self.len());
 		unsafe {
@@ -107,14 +96,40 @@ impl<T: CopyIfStable> GpuSlice<T> {
 		ret
 	}
 
+	/// Copies the data in the slice to the CPU and returns it as a `GpuSliceRef`.
+	/// The lifetime of this reference is linked to the lifetime of the `GpuSlice`.
+	/// 
+	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error occurs.
+	pub fn borrow_as_cpu_slice<'a>(&'a self) -> GpuSliceRef<'a, T> {
+		unsafe {
+			GpuSliceRef::from_device_ptr(self.as_ptr(), self.len()).expect("CUDA error")
+		}
+	}
+
+	/// Copies the data in the slice to the CPU and returns it as a mutable `GpuSliceRef`.
+	/// The lifetime of this reference is linked to the lifetime of the `GpuSlice`.
+	/// 
+	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error occurs.
+	pub fn borrow_as_cpu_slice_mut<'a>(&'a mut self) -> GpuSliceMutRef<'a, T> {
+		unsafe {
+			GpuSliceMutRef::from_device_ptr(self.as_mut_ptr(), self.len()).expect("CUDA error")
+		}
+	}
+
 	/// Copies the data in the slice to a new `GpuVec`.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::*;
+	/// # use cuda_util::prelude::*;
 	/// let a = GpuVec::from(&[1, 2, 3, 4][..]);
 	/// let b: GpuVec<_> = (&a[1..]).copy_to_gpu_vec();
 	/// assert_eq!(b.into_vec(), &[2, 3, 4]);
@@ -143,7 +158,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	pub fn first<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -159,7 +174,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	pub fn first_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -175,7 +190,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	pub fn last<'a>(&'a self) -> Option<GpuRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -191,7 +206,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	pub fn last_mut<'a>(&'a mut self) -> Option<GpuMutRef<'a, T>> {
 		if self.len() == 0 {
 			None
@@ -206,13 +221,13 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::from(&[1, 2, 100, 4, 5][..]);
 	/// assert_eq!(*v.get(2).unwrap(), 100);
 	/// ```
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation. See [`try_get()`](#method.try_get).
+	/// Panics if a CUDA error occurs. See [`try_get()`](#method.try_get).
 	pub fn get<'a>(&'a self, index: usize) -> Option<GpuRef<'a, T>> {
 		self.try_get(index).expect("CUDA error")
 	}
@@ -221,17 +236,17 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::from(&[1, 2, 3, 4, 5][..]);
 	/// {
 	/// 	let mut r = v.get_mut(2).unwrap();
 	/// 	*r = 100;
 	/// }
-	/// assert_eq!(v.copy_to_vec(), &[1, 2, 100, 4, 5]);
+	/// assert_eq!(v.to_vec(), &[1, 2, 100, 4, 5]);
 	/// ```
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation. See [`try_get_mut()`](#method.try_get_mut).
+	/// Panics if a CUDA error occurs. See [`try_get_mut()`](#method.try_get_mut).
 	pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<GpuMutRef<'a, T>> {
 		self.try_get_mut(index).expect("CUDA error")
 	}
@@ -281,14 +296,14 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Panics
 	/// Panics if `a` or `b` are out of bounds,
-	/// or if a CUDA error is encountered while performing this operation.
+	/// or if a CUDA error occurs.
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::*;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// v.swap(0, 1);
-	/// assert_eq!(v.copy_to_vec(), &[2, 1, 3]);
+	/// assert_eq!(v.to_vec(), &[2, 1, 3]);
 	/// ```
 	pub fn swap(&mut self, a: usize, b: usize) {
 		if a >= self.len() {
@@ -300,11 +315,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 		unsafe {
 			let a_ptr = self.as_mut_ptr().add(a);
 			let b_ptr = self.as_mut_ptr().add(b);
-			let mut tmp = cuda_alloc_device::<T>(1).expect("CUDA error");
-			cuda_memcpy(tmp, a_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
-			cuda_memcpy(a_ptr, b_ptr, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
-			cuda_memcpy(b_ptr, tmp, 1, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
-			cuda_free_device(&mut tmp).expect("CUDA error");
+			func::swap(a_ptr, b_ptr);
 		}
 	}
 
@@ -312,12 +323,12 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::*;
+	/// # use cuda_util::prelude::*;
 	/// let mut cpu_vec: Vec<u32> = (0..2000).into_iter().collect();
 	/// let mut v = GpuVec::from(&cpu_vec[..]);
 	/// v.reverse();
 	/// cpu_vec.reverse();
-	/// assert_eq!(&v.copy_to_vec(), &cpu_vec);
+	/// assert_eq!(&v.to_vec(), &cpu_vec);
 	/// ```
 	pub fn reverse(&mut self) {
 		unsafe {
@@ -349,7 +360,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::*;
+	/// # use cuda_util::prelude::*;
 	/// let v = GpuVec::from(&[5, 1, 3][..]);
 	/// assert!(v.contains(&5));
 	/// assert!(v.contains(&1));
@@ -358,7 +369,7 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// ```
 	/// 
 	/// ```
-	/// # use cuda_util::*;
+	/// # use cuda_util::prelude::*;
 	/// let v = GpuVec::from(&[0.0, 1.0, std::f32::NAN][..]);
 	/// assert!(v.contains(&0.0));
 	/// assert!(v.contains(&1.0));
@@ -374,10 +385,10 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
-	/// let v = GpuVec::from(vec![1, 2, 3, 4, 5]);
-	/// assert!(v.starts_with(&GpuVec::from(vec![1, 2, 3])));
-	/// assert!(!v.starts_with(&GpuVec::from(vec![1, 4, 5])));
+	/// # use cuda_util::prelude::*;
+	/// let v = gvec![1, 2, 3, 4, 5];
+	/// assert!(v.starts_with(&gvec![1, 2, 3]));
+	/// assert!(!v.starts_with(&gvec![1, 4, 5]));
 	/// ```
 	pub fn starts_with(&self, needle: &GpuSlice<T>) -> bool where T: GpuType {
 		if self.len() < needle.len() {
@@ -391,10 +402,10 @@ impl<T: CopyIfStable> GpuSlice<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
-	/// let v = GpuVec::from(vec![1, 2, 3, 4, 5]);
-	/// assert!(v.ends_with(&GpuVec::from(vec![4, 5])));
-	/// assert!(!v.ends_with(&GpuVec::from(vec![1, 4, 5])));
+	/// # use cuda_util::prelude::*;
+	/// let v = gvec![1, 2, 3, 4, 5];
+	/// assert!(v.ends_with(&gvec![4, 5]));
+	/// assert!(!v.ends_with(&gvec![1, 4, 5]));
 	/// ```
 	pub fn ends_with(&self, needle: &GpuSlice<T>) -> bool where T: GpuType {
 		if self.len() < needle.len() {
@@ -404,8 +415,33 @@ impl<T: CopyIfStable> GpuSlice<T> {
 		}
 	}
 
+	// TODO: rotate_left, rotate_right
+	// TODO: copy_within
 
-	// TODO: Everything in https://doc.rust-lang.org/std/primitive.slice.html below reverse()
+	/// Swaps all elements in `self` with those in `other`.
+	/// 
+	/// The length of `other` must be the same as `self`.
+	/// 
+	/// # Panics
+	/// Panics if the two slices have different lengths
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::prelude::*;
+	/// let mut v1 = gvec![1, 2, 3, 4];
+	/// let mut v2 = gvec![0, 0];
+	/// v1[1..3].swap_with_slice(&mut v2);
+	/// assert_eq!(v1.to_vec(), [1, 0, 0, 4]);
+	/// assert_eq!(v2.to_vec(), [2, 3]);
+	/// ```
+	pub fn swap_with_slice(&mut self, other: &mut GpuSlice<T>) {
+		if self.len() != other.len() {
+			panic!("lengths are different: {} != {}", self.len(), other.len());
+		}
+		unsafe {
+			func::swap_slice(self.as_mut_ptr(), other.as_mut_ptr(), self.len());
+		}
+	}
 }
 
 impl<T: CopyIfStable> fmt::Debug for GpuSlice<T> {
@@ -449,7 +485,15 @@ impl<T: CopyIfStable> cmp::Eq for GpuSlice<T> where T: GpuType + cmp::Eq {}
 
 // TODO: Slice ops: https://doc.rust-lang.org/std/primitive.slice.html
 
-/// Contiguous growable array type, similar to `Vec<T>` but stored on the GPU.
+impl<T: CopyIfStable> Into<Vec<T>> for &GpuSlice<T> where T: Clone {
+	fn into(self) -> Vec<T> {
+		self.to_vec()
+	}
+}
+
+
+/// Contiguous growable array type, similar to [`Vec<T>`](https://doc.rust-lang.org/std/vec/struct.Vec.html) but stored on the GPU.
+/// Pronounced 'GPU vector'.
 /// 
 /// `T` is bound by the [`CopyIfStable`](trait.CopyIfStable) trait. This is so that `T: Copy` by default,
 /// but unbounded when the `unstable` feature is activated. The `unstable` feature is automatically enabled
@@ -544,9 +588,9 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::try_from_slice(&[1, 2, 3][..]).expect("CUDA error");
-	/// assert_eq!(v.copy_to_vec(), &[1, 2, 3]);
+	/// assert_eq!(v.to_vec(), &[1, 2, 3]);
 	/// ```
 	pub fn try_from_slice(data: &[T]) -> CudaResult<Self> where T: Copy {
 		let len = data.len();
@@ -579,7 +623,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let data = vec![1, 2, 3, 4];
 	/// let mut v = GpuVec::try_from_vec(data.clone()).expect("CUDA error");
 	/// assert_eq!(v.into_vec(), data);
@@ -600,7 +644,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	pub fn into_vec(mut self) -> Vec<T> {
 		let mut v = Vec::with_capacity(self.len());
 		unsafe {
@@ -623,7 +667,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if `len + additional` overflows,
-	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
+	/// or if a CUDA error occurs (the most common being an out of memory error).
 	/// 
 	/// See [`try_reserve()`](#method.try_reserve).
 	pub fn reserve(&mut self, additional: usize) {
@@ -638,7 +682,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if `len + additional` overflows,
-	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
+	/// or if a CUDA error occurs (the most common being an out of memory error).
 	/// 
 	/// See [`try_reserve()`](#method.try_reserve).
 	pub fn reserve_exact(&mut self, additional: usize) {
@@ -728,7 +772,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation.
+	/// Panics if a CUDA error occurs.
 	pub fn swap_remove(&mut self, index: usize) -> T {
 		let index_ptr = self.ptr.wrapping_offset(index as isize);
 		let end_ptr = self.ptr.wrapping_offset(self.len as isize - 1);
@@ -753,7 +797,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// Panics if `index` is out of bounds,
 	/// or if adding an element to the vector would make the capacity overflow.
 	/// 
-	/// Also panics if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
+	/// Also panics if a CUDA error occurs (the most common being an out of memory error).
 	pub fn insert(&mut self, index: usize, element: T) {
 		// TODO: Make more efficient somehow by using CUDA kernels
 		if index > self.len {
@@ -791,14 +835,14 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if `index` is out of bounds,
-	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
+	/// or if a CUDA error occurs (the most common being an out of memory error).
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// assert_eq!(v.remove(1), 2);
-	/// assert_eq!(&v.copy_to_vec(), &[1, 3]);
+	/// assert_eq!(&v.to_vec(), &[1, 3]);
 	/// ```
 	pub fn remove(&mut self, index: usize) -> T {
 		// TODO: Make more efficient somehow by using CUDA kernels
@@ -834,14 +878,14 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// 
 	/// # Panics
 	/// Panics if adding an element to the vector would make the capacity overflow,
-	/// or if a CUDA error is encountered while performing this operation (the most common being an out of memory error).
+	/// or if a CUDA error occurs (the most common being an out of memory error).
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// v.push(4);
-	/// assert_eq!(&v.copy_to_vec(), &[1, 2, 3, 4]);
+	/// assert_eq!(&v.to_vec(), &[1, 2, 3, 4]);
 	/// ```
 	pub fn push(&mut self, value: T) {
 		self.reserve(1);
@@ -857,11 +901,11 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// This is a relatively slow operation, as it requires moving memory between the RAM and the GPU.
 	/// 
 	/// # Panics
-	/// Panics if a CUDA error is encountered while performing this operation
+	/// Panics if a CUDA error occurs
 	/// 
 	/// # Examples
 	/// ```
-	/// # use cuda_util::GpuVec;
+	/// # use cuda_util::prelude::*;
 	/// let mut v = GpuVec::from(&[1, 2, 3][..]);
 	/// assert_eq!(v.pop(), Some(3));
 	/// assert_eq!(v.pop(), Some(2));
@@ -883,7 +927,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// Appends the elements of another vector onto the end of this one.
 	/// 
 	///	# Panics
-	/// Panics if a CUDA error is encountered while performing this operation (the most common being an out of memory error),
+	/// Panics if a CUDA error occurs (the most common being an out of memory error),
 	/// or if adding the elements to this vector would make the capacity overflow.
 	pub fn append(&mut self, other: &GpuSlice<T>) {
 		self.reserve(other.len());
@@ -906,7 +950,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	///
 	/// This has no effect on the allocated capacity of the vector.
 	pub fn try_clear(&mut self) -> CudaResult<()> {
-		if type_util::has_drop_and_stable::<T>() {
+		if type_util::has_drop::<T>() {
 			// `Drop` requires that the data is on the CPU, so copy the data to a `Vec` before dropping
 			let mut vec = Vec::with_capacity(self.len());
 			unsafe {
@@ -920,6 +964,157 @@ impl<T: CopyIfStable> GpuVec<T> {
 		} else {
 			self.len = 0;
 			Ok(())
+		}
+	}
+
+	
+	/// Returns the number of elements in the GPU vector.
+	pub fn len(&self) -> usize {
+		self.len
+	}
+
+	/// Returns `true` if the GPU vector contains no elements.
+	pub fn is_empty(&self) -> bool {
+		self.len == 0
+	}
+	
+	/// Splits the collection at the given index.
+	/// 
+	/// Returns a newly allocated GPU vector. `self` contains elements `[0, at)`, and the returned GPU vector contains
+	/// the elements `[at, len)`.
+	/// 
+	/// Note that the capacity of `self` does not change.
+	/// 
+	/// # Panics
+	/// Panics if `at > len`, or if a CUDA error occurs (the most common being an out of memory error).
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::prelude::*;
+	/// let mut vec = gvec![1, 2, 3];
+	/// let vec2 = vec.split_off(1);
+	/// assert_eq!(vec.to_vec(), [1]);
+	/// assert_eq!(vec2.to_vec(), [2, 3]);
+	/// ```
+	pub fn split_off(&mut self, at: usize) -> GpuVec<T> {
+		if at > self.len() {
+			panic!("index {} out of bounds in GPU vector of length {}", at, self.len());
+		}
+		let ret_len = self.len() - at;
+		let mut ret = GpuVec::with_capacity(ret_len);
+		unsafe {
+			cuda_memcpy(ret.as_mut_ptr(), self.as_mut_ptr().add(at), ret_len, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+			ret.set_len(ret_len);
+			self.set_len(at);
+		}
+		ret
+	}
+
+	// TODO(device_fn_ptr): resize_with
+
+	/// Resize the GPU vector in-place, so that `len` is equal to `new_len`.
+	/// 
+	/// If `new_len` is greater than `len`, the GPU vector is extended by the difference, with
+	/// each additional slot filled by `value`.
+	#[cfg_attr(feature="unstable", doc="If `T: !Copy`, `clone()` is called for each new element.")]
+	/// 
+	/// If `new_len` is less than `len`, then the GPU vector is truncated.
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error occurs (the most common being an out of memory error).
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::prelude::*;
+	/// let mut gv = gvec![1, 2, 3];
+	/// gv.resize(4*1024, 4);
+	/// assert_eq!(gv[..3].to_vec(), [1, 2, 3]);
+	/// assert_eq!(gv[3..].to_vec(), vec![4; 4*1024-3]);
+	/// ```
+	pub fn resize(&mut self, new_len: usize, value: T) where T: Clone {
+		if self.len() == new_len {
+			// Do nothing
+		} else if self.len() > new_len {
+			// Truncate vector
+			// Drop some elements from the GPU vector
+			if type_util::has_drop::<T>() {
+				// Copy to host vector before dropping
+				let drop_elements_len = self.len() - new_len;
+				let mut v = Vec::with_capacity(drop_elements_len);
+				unsafe {
+					cuda_memcpy(v.as_mut_ptr(), self.as_ptr(), drop_elements_len, CudaMemcpyKind::DeviceToHost).expect("CUDA error");
+					v.set_len(drop_elements_len);
+					self.set_len(new_len);
+				}
+			} else {
+				unsafe {
+					self.set_len(new_len);
+				}
+			}
+		} else {
+			// Extend vector
+			let extra_len = new_len - self.len();
+			self.reserve(extra_len);
+			if type_util::has_copy::<T>() {
+				let mut chunk_len = 1024.min(extra_len);
+				let end_ptr = unsafe { self.as_mut_ptr().add(self.len()) };
+				
+				// Copy initial 1024 elements
+				let mut extra = Vec::with_capacity(chunk_len);
+				extra.resize(chunk_len, value);
+				unsafe {
+					cuda_memcpy(end_ptr, extra.as_ptr(), chunk_len, CudaMemcpyKind::HostToDevice).expect("CUDA error");
+				}
+				
+				// Fill GPU vector using data that has already been copied to the GPU
+				let mut num_copied = chunk_len;
+				while num_copied < extra_len {
+					let copy_len = chunk_len.min(extra_len - num_copied);
+					unsafe {
+						cuda_memcpy(end_ptr.add(num_copied), end_ptr, copy_len, CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+					}
+					num_copied += copy_len;
+					chunk_len *= 2;
+				}
+				unsafe {
+					self.set_len(new_len);
+				}
+			} else {
+				let mut extra: Vec<ManuallyDrop<T>> = Vec::with_capacity(extra_len);
+				extra.resize(extra_len, ManuallyDrop::new(value));
+				
+				// Copy to GPU vec
+				unsafe {
+					cuda_memcpy(self.as_mut_ptr().add(self.len()), extra.as_ptr() as *const T, extra_len, CudaMemcpyKind::HostToDevice).expect("CUDA error");
+					self.set_len(new_len);
+				}
+			}
+		}
+	}
+
+	/// Clones and appends all elements in a slice to the GPU vector.
+	//#[cfg_attr(feature="unstable", doc="\nIf `T: !Copy`, this is slow as `other` has to be copied to RAM,")]
+	//#[cfg_attr(feature="unstable", doc="`clone` has to be called on each element, and then each element gets copied back again.")]
+	/// 
+	/// # Panics
+	/// Panics if a CUDA error occurs (the most common being an out of memory error).
+	/// 
+	/// # Examples
+	/// ```
+	/// # use cuda_util::prelude::*;
+	/// let v = gvec![1, 2, 3];
+	/// let v2 = gvec![4, 5, 6, 7];
+	/// v.extend_from_slice(&v2[2..]);
+	/// v.extend_from_slice(&v2[..2]);
+	/// v.extend_from_slice(&v2[..]);
+	/// v.extend_from_slice(&v2[1..2]);
+	/// assert_eq!(v.to_vec(), vec![1, 2, 3, 6, 7, 4, 5, 4, 5, 6, 7, 5]);
+	/// ```
+	pub fn extend_from_slice(&mut self, other: &GpuSlice<T>) where T: Copy {
+		self.reserve(other.len());
+		unsafe {
+			cuda_memcpy(self.as_mut_ptr().add(self.len()), other.as_ptr(), other.len(), CudaMemcpyKind::DeviceToDevice).expect("CUDA error");
+			self.set_len(self.len().checked_add(other.len()).unwrap());
 		}
 	}
 
@@ -986,7 +1181,7 @@ impl<T: CopyIfStable> DerefMut for GpuVec<T> {
 
 impl<T: CopyIfStable + Clone> Clone for GpuVec<T> {
 	fn clone(&self) -> Self {
-		if type_util::has_copy_or_stable::<T>() {
+		if type_util::has_copy::<T>() {
 			// Copy the raw bytes from one to another
 			unsafe {
 				let mut v = Self::with_capacity(self.len());
@@ -1069,6 +1264,17 @@ impl<T: CopyIfStable, I: GpuSliceRange<T>> ops::IndexMut<I> for GpuVec<T> {
 
 // TODO: Vec ops: https://doc.rust-lang.org/std/vec/struct.Vec.html
 
+impl<T: CopyIfStable> Into<Vec<T>> for GpuVec<T> {
+	fn into(self) -> Vec<T> {
+		self.into_vec()
+	}
+}
+impl<T: CopyIfStable> Into<Vec<T>> for &GpuVec<T> where T: Clone {
+	fn into(self) -> Vec<T> {
+		self.to_vec()
+	}
+}
+
 impl<T: CopyIfStable> cmp::PartialEq<GpuVec<T>> for GpuSlice<T> where T: GpuType {
 	fn eq(&self, other: &GpuVec<T>) -> bool { self == other.as_slice() }
 	fn ne(&self, other: &GpuVec<T>) -> bool { self != other.as_slice() }
@@ -1148,15 +1354,15 @@ mod tests {
 	#[test]
 	pub fn test_slice() {
 		let data: GpuVec<_> = vec![1, 2, 3, 4, 5].into();
-		assert_eq!((&data[..]).copy_to_vec(), &[1, 2, 3, 4, 5]);
-		assert_eq!((&data[0..]).copy_to_vec(), &[1, 2, 3, 4, 5]);
-		assert_eq!((&data[1..]).copy_to_vec(), &[2, 3, 4, 5]);
-		assert_eq!((&data[..4]).copy_to_vec(), &[1, 2, 3, 4]);
-		assert_eq!((&data[..5]).copy_to_vec(), &[1, 2, 3, 4, 5]);
-		assert_eq!((&data[1..2]).copy_to_vec(), &[2]);
-		assert_eq!((&data[..=2]).copy_to_vec(), &[1, 2, 3]);
-		assert_eq!((&data[1..=2]).copy_to_vec(), &[2, 3]);
-		assert_eq!((&(&data[1..4])[1..2]).copy_to_vec(), &[3]);
+		assert_eq!((&data[..]).to_vec(), &[1, 2, 3, 4, 5]);
+		assert_eq!((&data[0..]).to_vec(), &[1, 2, 3, 4, 5]);
+		assert_eq!((&data[1..]).to_vec(), &[2, 3, 4, 5]);
+		assert_eq!((&data[..4]).to_vec(), &[1, 2, 3, 4]);
+		assert_eq!((&data[..5]).to_vec(), &[1, 2, 3, 4, 5]);
+		assert_eq!((&data[1..2]).to_vec(), &[2]);
+		assert_eq!((&data[..=2]).to_vec(), &[1, 2, 3]);
+		assert_eq!((&data[1..=2]).to_vec(), &[2, 3]);
+		assert_eq!((&(&data[1..4])[1..2]).to_vec(), &[3]);
 	}
 	
 	#[cfg(feature="unstable")]
