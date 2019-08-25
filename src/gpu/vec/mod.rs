@@ -1102,7 +1102,7 @@ impl<T: CopyIfStable> GpuVec<T> {
 	/// # Examples
 	/// ```
 	/// # use cuda_util::prelude::*;
-	/// let v = gvec![1, 2, 3];
+	/// let mut v = gvec![1, 2, 3];
 	/// let v2 = gvec![4, 5, 6, 7];
 	/// v.extend_from_slice(&v2[2..]);
 	/// v.extend_from_slice(&v2[..2]);

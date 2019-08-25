@@ -12,21 +12,21 @@ thread_local! {
 
 
 pub unsafe fn swap<T>(a: *mut T, b: *mut T) {
-	global_swap((1, 2, size_of::<T>() * 2), a as *mut u8, b as *mut u8, size_of::<T>().try_into().unwrap());
+	global_swap((1, 1, size_of::<T>()), a as *mut u8, b as *mut u8, size_of::<T>().try_into().unwrap());
 }
 
 #[global]
 unsafe fn global_swap(a: *mut u8, b: *mut u8, elem_size: u32) {
 	#[shared]
 	let mut tmp: [u8];
-	let mut offset: u32 = threadIdx.x * elem_size;
 	for i in 0..elem_size {
-		tmp[offset + i] = a[i];
+		tmp[i] = a[i];
 	}
-	__syncthreads();
-	offset = (1-threadIdx.x) * elem_size;
 	for i in 0..elem_size {
-		b[i] = tmp[offset + i];
+		a[i] = b[i];
+	}
+	for i in 0..elem_size {
+		b[i] = tmp[i];
 	}
 }
 
