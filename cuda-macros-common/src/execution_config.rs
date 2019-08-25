@@ -98,7 +98,7 @@ fn div_ceil(x: usize, divisor: usize) -> usize {
 /// There are constructors defined from a tuple of the format `(Dg, Db[, Ns[, S]])`, where:
 /// - `Dg` specifies the dimension and size of the grid, such that `Dg.x * Dg.y * Dg.z` equals the number of blocks being launched.
 /// - `Db` specifies the dimension and size of each block, such that `Db.x * Db.y * Db.z` equals the number of threads per block.
-/// - `Ns` specifies the number of bytes in shared memory that is dynamically allocated per block for this call. This can be accessed by using a `#[shared]`
+/// - `Ns` specifies the number of bytes in shared memory that is dynamically allocated *per block* for this call. This can be accessed by using a `#[shared]`
 ///   attribute on a `let <ident>: [<type>];` expression. This defaults to 0.
 /// - `S` specifies the associated CUDA stream. This defaults to `NULL`.
 /// 

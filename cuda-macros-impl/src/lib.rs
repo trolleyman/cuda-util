@@ -3,14 +3,17 @@
 //! 
 //! It is not recommended to use this crate directly. Instead, use [`cuda-macros`](https://docs.rs/cuda-macros).
 
+extern crate cuda;
 extern crate cuda_macros_common as util;
 
 extern crate proc_macro;
-extern crate cuda;
 extern crate proc_macro2;
 extern crate syn;
 extern crate quote;
+
 extern crate fs2;
+extern crate lazy_static;
+
 
 mod output;
 
@@ -80,7 +83,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 	let generics_params = f.sig.generics.params;
 
 	let fn_ident = f.sig.ident.clone();
-	let fn_ident_c_base = format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), fn_ident);
+	let fn_ident_c_base = format!("_rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), fn_ident);
 
 	if !fn_info.is_generic() {
 		let args = quote!{ #(#args),* };

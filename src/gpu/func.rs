@@ -1,5 +1,7 @@
 
 use std::cell::RefCell;
+use std::convert::TryInto;
+use std::mem::size_of;
 
 use crate::*;
 
@@ -9,8 +11,27 @@ thread_local! {
 }
 
 
+pub unsafe fn swap<T>(a: *mut T, b: *mut T) {
+	global_swap((1, 2, size_of::<T>() * 2), a as *mut u8, b as *mut u8, size_of::<T>().try_into().unwrap());
+}
+
+#[global]
+unsafe fn global_swap(a: *mut u8, b: *mut u8, elem_size: u32) {
+	#[shared]
+	let mut tmp: [u8];
+	let mut offset: u32 = threadIdx.x * elem_size;
+	for i in 0..elem_size {
+		tmp[offset + i] = a[i];
+	}
+	__syncthreads();
+	offset = (1-threadIdx.x) * elem_size;
+	for i in 0..elem_size {
+		b[i] = tmp[offset + i];
+	}
+}
+
 pub unsafe fn reverse_vector<T>(vec: *mut T, len: usize) {
-	let elem_size = std::mem::size_of::<T>();
+	let elem_size = size_of::<T>();
 	let conf = ExecutionConfig::from_num_threads_with_shared_mem_per_thread(len as u32 / 2, elem_size);
 	global_reverse_vector(conf, vec as *mut u8, elem_size as u32, len as u32);
 }
@@ -18,7 +39,7 @@ pub unsafe fn reverse_vector<T>(vec: *mut T, len: usize) {
 #[global]
 unsafe fn global_reverse_vector(vec: *mut u8, elem_size: u32, len: u32) {
 	#[shared]
-	let tmp: [u8];
+	let mut tmp: [u8];
 	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
 	let ri: u32 = len - 1 - i;
 
@@ -47,13 +68,13 @@ pub unsafe fn contains<T>(x: T, vec: *const T, len: usize) -> bool where T: GpuT
 		tmp.clear();
 		tmp.push(0);
 		let conf = ExecutionConfig::from_num_threads(len as u32);
-		global_contains(conf, tmp.as_mut_ptr() as *mut bool, x, vec, len);
+		global_contains(conf, tmp.as_mut_ptr() as *mut bool, x, vec, len as u32);
 		*tmp.get(0).unwrap() != 0
 	})
 }
 
 #[global]
-pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: usize) where T: GpuType {
+pub unsafe fn global_contains<T>(found: *mut bool, x: T, vec: *const T, len: u32) where T: GpuType {
 	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
 	if i < len && vec[i] == x {
 		*found = true;
@@ -66,13 +87,13 @@ pub unsafe fn eq<T>(lhs: *const T, rhs: *const T, len: usize) -> bool where T: G
 		tmp.clear();
 		tmp.push(0);
 		let conf = ExecutionConfig::from_num_threads(len as u32);
-		global_eq(conf, tmp.as_mut_ptr() as *mut bool, lhs, rhs, len);
+		global_eq(conf, tmp.as_mut_ptr() as *mut bool, lhs, rhs, len as u32);
 		*tmp.get(0).unwrap() == 0
 	})
 }
 
 #[global]
-pub unsafe fn global_eq<T>(ret_neq: *mut bool, lhs: *const T, rhs: *const T, len: usize) where T: GpuType {
+pub unsafe fn global_eq<T>(ret_neq: *mut bool, lhs: *const T, rhs: *const T, len: u32) where T: GpuType {
 	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
 	if i < len && lhs[i] != rhs[i] {
 		*ret_neq = true;
@@ -87,3 +108,49 @@ pub unsafe fn ne<T>(lhs: *const T, rhs: *const T, len: usize) -> bool where T: G
 // pub unsafe fn global_ne<T>(lhs: *const T, rhs: *const T, len: usize) where T: GpuType {
 	
 // }
+
+pub unsafe fn swap_slice<T>(a: *mut T, b: *mut T, len: usize) {
+	let len = len as u32;
+	let conf = ExecutionConfig::from_num_threads_with_shared_mem_per_thread(len, size_of::<T>());
+	if size_of::<T>() == size_of::<u8>() {
+		global_swap_slice_generic(conf, a as *mut u8, b as *mut u8, len);
+	} else if size_of::<T>() == size_of::<u16>() {
+		global_swap_slice_generic(conf, a as *mut u16, b as *mut u16, len);
+	} else if size_of::<T>() == size_of::<u32>() {
+		global_swap_slice_generic(conf, a as *mut u32, b as *mut u32, len);
+	} else if size_of::<T>() == size_of::<u64>() {
+		global_swap_slice_generic(conf, a as *mut u64, b as *mut u64, len);
+	} else {
+		global_swap_slice(conf, a as *mut u8, b as *mut u8, size_of::<T>() as u32, len);
+	}
+}
+
+#[global]
+unsafe fn global_swap_slice(a: *mut u8, b: *mut u8, elem_size: u32, len: u32) {
+	#[shared]
+	let mut tmp: [u8];
+	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
+	if i < len {
+		for j in 0..elem_size {
+			tmp[threadIdx.x + j] = a[i + j];
+		}
+		for j in 0..elem_size {
+			a[i + j] = b[i + j];
+		}
+		for j in 0..elem_size {
+			b[i + j] = tmp[threadIdx.x + j];
+		}
+	}
+}
+
+#[global]
+unsafe fn global_swap_slice_generic<T: GpuType>(a: *mut T, b: *mut T, len: u32) {
+	#[shared]
+	let mut tmp: [T];
+	let i: u32 = blockDim.x * blockIdx.x + threadIdx.x;
+	if i < len {
+		tmp[threadIdx.x] = a[i];
+		a[i] = b[i];
+		b[i] = tmp[threadIdx.x];
+	}
+}

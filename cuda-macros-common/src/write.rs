@@ -94,14 +94,14 @@ typedef struct {
 	uint32_t x;
 	uint32_t y;
 	uint32_t z;
-} rust_cuda_macros_dim3_t;
+} _rust_cuda_macros_dim3_t;
 
 typedef struct {
-	rust_cuda_macros_dim3_t grid_size;
-	rust_cuda_macros_dim3_t block_size;
+	_rust_cuda_macros_dim3_t grid_size;
+	_rust_cuda_macros_dim3_t block_size;
 	size_t shared_mem_size;
 	cudaStream_t cuda_stream;
-} rust_cuda_macros_execution_config_t;
+} _rust_cuda_macros_execution_config_t;
 
 "#)?;
 	Ok(())
@@ -138,6 +138,8 @@ fn write_source_intro(of: &mut dyn FileLike) -> Result<(), TransError> {
 	writeln!(of, "")?;
 	writeln!(of, "#include <cstdio>")?;
 	writeln!(of, "#include <header.h>")?;
+	writeln!(of, "")?;
+	writeln!(of, "extern __shared__ unsigned char _rust_cuda_macros_shared_memory[];")?;
 	writeln!(of, "")?;
 	Ok(())
 }
@@ -188,7 +190,7 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 	let mut args = vec![];
 	if is_wrapper {
 		// Add ExecutionConfig argument
-		args.push("rust_cuda_macros_execution_config_t rust_cuda_macros_config".into());
+		args.push("_rust_cuda_macros_execution_config_t _rust_cuda_macros_config".into());
 	}
 	if let Some(generic_tys) = generic_tys {
 		let generic_tys: Vec<_> = fn_info.number_generics.iter().zip(generic_tys.iter()).map(|(x, &y)| (x.as_str(), y)).collect();
@@ -208,7 +210,7 @@ fn write_fn_decl<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnInfo, is_
 	
 	let args = args.join(", ");
 	let mut fn_ident = if is_wrapper {
-		format!("rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), &f.sig.ident)
+		format!("_rust_cuda_macros_wrapper_{}_{}", fn_info.number_generics.len(), &f.sig.ident)
 	} else {
 		format!("{}", &f.sig.ident)
 	};
@@ -250,10 +252,10 @@ fn write_wrapper_fn_body<F: FileLike>(of: &mut F, f: &syn::ItemFn, fn_info: &FnI
 	} else {
 		writeln!(of, "\treturn {}<<<", &f.sig.ident)?;
 	}
-	writeln!(of, "\t\tdim3(rust_cuda_macros_config.grid_size.x, rust_cuda_macros_config.grid_size.y, rust_cuda_macros_config.grid_size.z),")?;
-	writeln!(of, "\t\tdim3(rust_cuda_macros_config.block_size.x, rust_cuda_macros_config.block_size.y, rust_cuda_macros_config.block_size.z),")?;
-	writeln!(of, "\t\trust_cuda_macros_config.shared_mem_size,")?;
-	writeln!(of, "\t\trust_cuda_macros_config.cuda_stream")?;
+	writeln!(of, "\t\tdim3(_rust_cuda_macros_config.grid_size.x, _rust_cuda_macros_config.grid_size.y, _rust_cuda_macros_config.grid_size.z),")?;
+	writeln!(of, "\t\tdim3(_rust_cuda_macros_config.block_size.x, _rust_cuda_macros_config.block_size.y, _rust_cuda_macros_config.block_size.z),")?;
+	writeln!(of, "\t\t_rust_cuda_macros_config.shared_mem_size,")?;
+	writeln!(of, "\t\t_rust_cuda_macros_config.cuda_stream")?;
 	writeln!(of, "\t>>>({});", args)?;
 	Ok(())
 }
@@ -281,6 +283,8 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &s
 						is_shared = true;
 					}
 				}
+				
+				// Get ident, mutability and type of `let` expression
 				let (ident, mutability, ty) = match &local.pat {
 					Pat::Type(pt) => {
 						match &*pt.pat {
@@ -290,14 +294,26 @@ fn write_stmt<F: FileLike>(mut of: FileLikeIndent<F>, fn_info: &FnInfo, stmt: &s
 							_ => return Err(syn::Error::new_spanned(local.pat.clone(), "invalid pattern: only simple identifier allowed").into()),
 						}
 					},
-					_ =>return Err(syn::Error::new_spanned(local.pat.clone(), "invalid pattern: type annotations are required").into())
+					_ => return Err(syn::Error::new_spanned(local.pat.clone(), "invalid pattern: type annotations are required").into())
 				};
+				
+				// #[shared]-specific checks
+				if is_shared {
+					// Check mutability
+					if !mutability {
+						return Err(syn::Error::new_spanned(ident.clone(), "#[shared] declarations must be mutable").into());
+					}
+				}
+				
+				// Convert types
 				let (cty_prefix, cty_postfix) = if is_shared {
 					conv::rust_shared_type_to_c(&*ty, fn_info)?
 				} else {
 					(conv::rust_type_to_c(&*ty, fn_info, !mutability)
 						.map_err(|e| e.unwrap_or(syn::Error::new_spanned(ty.clone(), "invalid type")))?, "".into())
 				};
+				
+				// Write output
 				write!(&mut of, "{} ", cty_prefix)?;
 				write!(&mut of, "{}", ident)?;
 				write!(&mut of, "{}", cty_postfix)?;

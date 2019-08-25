@@ -29,7 +29,10 @@ pub fn get_inner_expr(e: &syn::Expr) -> Result<&syn::Expr, syn::Error> {
 fn rust_shared_type_to_c_inner(ty: &syn::Type, fn_info: &FnInfo) -> Result<(Cow<'static, str>, Cow<'static, str>), Option<syn::Error>> {
 	use syn::{Type, Expr};
 	match ty {
-		Type::Slice(ty) => Ok((format!("extern __shared__ {}", rust_type_to_c(&ty.elem, fn_info, false)?).into(), "[]".into())),
+		Type::Slice(ty) => Ok((
+			"auto".into(),
+			format!(" = reinterpret_cast<{}* const>(_rust_cuda_macros_shared_memory)", rust_type_to_c(&ty.elem, fn_info, false)?).into()
+		)),
 		Type::Array(ty) => match &ty.len {
 			Expr::Lit(syn::ExprLit{ lit: syn::Lit::Int(lit), .. }) => {
 				let val = lit.base10_parse::<usize>().map_err(|_| syn::Error::new_spanned(lit.clone(), "integer too large for usize"))?;

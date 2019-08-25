@@ -24,7 +24,7 @@ impl<T: GpuType, D: Dimension> TensorTrait for GpuTensor<T, D> {
 	type Elem = T;
 	type Dim = D;
 
-	fn from_ndarray<S>(_array: ndarray::ArrayBase::<S, D>) -> Self where S: ndarray::Data<Elem=T> {
+	fn from_ndarray<S>(array: ndarray::ArrayBase::<S, D>) -> Self where S: ndarray::Data<Elem=T> {
 		unimplemented!()
 	}
 

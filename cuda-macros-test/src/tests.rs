@@ -5,7 +5,7 @@ use cuda_macros::*;
 
 #[device]
 unsafe fn device1() -> i32 {
-	2
+	return 2;
 }
 
 #[device]
@@ -167,4 +167,33 @@ fn test_cfg() {
 	assert_eq!(x, 1);
 	#[cfg(not(windows))]
 	assert_eq!(x, 2);
+}
+
+#[global]
+unsafe fn static_shared(x: *const f32, y: *mut f32) {
+	#[shared]
+	let mut shared: [f32; 2];
+	let i: u32 = threadIdx.x;
+	shared[i] = x[i];
+	y[i] = shared[i];
+}
+
+#[test]
+fn test_static_shared() {
+	let x = [1.0f32, 2.0];
+	let mut y = [0.0f32, 0.0];
+	unsafe {
+		let x_device = cuda_alloc_device(std::mem::size_of::<f32>() * 2).unwrap() as *mut f32;
+		let y_device = cuda_alloc_device(std::mem::size_of::<f32>() * 2).unwrap() as *mut f32;
+		cuda_memcpy(x_device, &x as *const f32, 2, CudaMemcpyKind::HostToDevice).unwrap();
+		cuda_memcpy(y_device, &y as *const f32, 2, CudaMemcpyKind::HostToDevice).unwrap();
+		
+		static_shared((1, 2), x_device, y_device);
+		
+		cuda_memcpy(&mut y[0] as *mut f32, y_device, 2, CudaMemcpyKind::DeviceToHost).unwrap();
+		
+		cuda_free_device(x_device as *mut u8).unwrap();
+		cuda_free_device(y_device as *mut u8).unwrap();
+	}
+	assert_eq!(y, x);
 }
