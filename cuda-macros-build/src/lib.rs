@@ -30,7 +30,7 @@ use serde_json::Value;
 
 
 lazy_static! {
-	static ref BUILD_DIRNAME: String = format!("cuda-macros_build_{}_{}", std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
+	static ref BUILD_DIRNAME: String = format!("cuda-macros_{}_{}", std::env::var("CARGO_PKG_NAME").unwrap(), std::env::var("CARGO_PKG_VERSION").unwrap());
 }
 
 /// Set of build options to apply when building this crate.
@@ -77,7 +77,7 @@ fn should_cleanup_dir(p: impl AsRef<Path>) -> io::Result<bool> {
 		return Ok(false);
 	}
 	let name = name.map(|p| p.to_string_lossy().to_string()).unwrap_or("".to_string());
-	if !name.starts_with("cuda-macros_build_") || name == BUILD_DIRNAME.as_str() {
+	if !name.starts_with("cuda-macros_") || name == BUILD_DIRNAME.as_str() {
 		return Ok(false);
 	}
 
