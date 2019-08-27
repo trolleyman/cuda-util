@@ -3,17 +3,7 @@
 //! 
 //! It is not recommended to use this crate directly. Instead, use [`cuda-macros`](https://docs.rs/cuda-macros).
 
-extern crate cuda;
-extern crate cuda_macros_common as util;
-
 extern crate proc_macro;
-extern crate proc_macro2;
-extern crate syn;
-extern crate quote;
-
-extern crate fs2;
-extern crate lazy_static;
-
 
 mod output;
 
@@ -113,7 +103,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		// Generate `extern "C"` functions
 		let mut fn_ident_c = String::with_capacity(fn_ident_c_base.len() + 3 * fn_info.number_generics.len());
 		let mut tys_extra = vec![];
-		cuda_macros_common::permutations(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
+		util::permutations(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
 			// Get correct ident name (e.g. compare_f32_u32 is from compare<T: GpuType, U: GpuType>(x: T, y: T) with f32 and u32 type args)
 			fn_ident_c.clone_from(&fn_ident_c_base);
 			for ty in tys.iter() {
@@ -194,7 +184,7 @@ fn process_global_fn(f: syn::ItemFn) -> Result<TokenStream, TokenStream> {
 		let match_input = quote!{ (#(#match_inputs,)*) };
 
 		let mut match_inner = quote!{};
-		cuda_macros_common::permutations(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
+		util::permutations(GpuTypeEnum::types(), fn_info.number_generics.len(), |tys| {
 			// Generate match arm pattern
 			let mut match_patterns = vec!{};
 			for (ty, ident) in match_pattern_types.iter() {
@@ -253,7 +243,7 @@ fn infallible_unwrap<T>(val: Result<T, T>) -> T {
 }
 
 fn process_fn(mut f: syn::ItemFn, fn_type: FunctionType) -> TokenStream {
-	use cuda_macros_common::FunctionType::*;
+	use util::FunctionType::*;
 
 	let mut device_host = None;
 	for (i, a) in f.attrs.iter().enumerate() {

@@ -12,11 +12,6 @@
 //! Control then returns to this build script which compiles the CUDA code using `nvcc`,
 //! and instructs Cargo to link to it when building the crate.
 
-extern crate cc;
-extern crate whoami;
-extern crate serde_json;
-
-
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -1,10 +1,6 @@
 #![cfg_attr(feature="unstable", feature(specialization))]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/trolleyman/cuda-util/master/res/logo_512.png")]
 
-extern crate num;
-extern crate ndarray;
-
-extern crate cuda_macros;
 
 #[macro_use]
 mod private;

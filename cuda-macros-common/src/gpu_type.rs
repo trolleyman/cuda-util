@@ -86,7 +86,7 @@ impl GpuTypeEnum {
 }
 
 /// Any number that can be sent to CUDA implements this.
-pub trait GpuType: num::Num + Copy {
+pub trait GpuType: num::Num + Copy + std::fmt::Debug + std::fmt::Display {
 	fn gpu_type(&self) -> GpuTypeEnum;
 }
 

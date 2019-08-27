@@ -154,3 +154,31 @@ unsafe fn global_swap_slice_generic<T: GpuType>(a: *mut T, b: *mut T, len: u32) 
 		b[i] = tmp[threadIdx.x];
 	}
 }
+
+/// Returns `(gpu_vec, dim, strides)`
+pub fn gpu_vec_from_ndarray<T, S, D>(array: nd::ArrayBase::<S, D>) -> (GpuVec<T>, D, D) where T: GpuType, S: nd::Data<Elem=T>, D: nd::Dimension {
+	let shape = array.shape();
+	let v = if let Some(s) = array.as_slice() {
+		GpuVec::from(s)
+	} else {
+		GpuVec::from(&array.iter().map(|&x| x).collect::<Vec<_>>())
+	};
+
+	// Compute default array strides
+	// e.g. shape (a, b, c) => strides (b * c, c, 1)
+	let mut strides = D::zeros(array.ndim());
+	if shape.iter().all(|&d| d != 0) {
+		let mut it = strides.slice_mut().iter_mut().rev();
+		// Set first element to 1
+		if let Some(rs) = it.next() {
+			*rs = 1;
+		}
+		let mut cum_prod = 1;
+		for (rs, dim) in it.zip(shape.iter().rev()) {
+			cum_prod *= *dim;
+			*rs = cum_prod;
+		}
+	}
+	
+	(v, array.raw_dim(), strides)
+}

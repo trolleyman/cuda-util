@@ -2,12 +2,6 @@
 //! Util crate for common functionality shared between the `proc-macro` crate [`cuda-macros-impl`](https://docs.rs/cuda-macros-impl),
 //! [`cuda-macros-build`](https://docs.rs/cuda-macros-build), and [`cuda-macros`](https://docs.rs/cuda-macros).
 
-extern crate cuda;
-extern crate proc_macro2;
-extern crate syn;
-extern crate quote;
-extern crate chrono;
-
 use syn::spanned::Spanned;
 use proc_macro2::TokenStream;
 use quote::ToTokens;

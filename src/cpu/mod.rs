@@ -1,5 +1,5 @@
 
-use ndarray::prelude::*;
+use nd::prelude::*;
 use crate::*;
 
 
@@ -12,10 +12,14 @@ impl<T: GpuType, D: Dimension> TensorTrait for CpuTensor<T, D> {
 	type Elem = T;
 	type Dim = D;
 	
-	fn from_ndarray<S>(array: ndarray::ArrayBase::<S, D>) -> Self where S: ndarray::Data<Elem=T> {
+	fn from_ndarray<S>(array: nd::ArrayBase::<S, D>) -> Self where S: nd::Data<Elem=T> {
 		CpuTensor {
-			inner: array.to_owned()
+			inner: array.into_owned()
 		}
+	}
+
+	fn into_generic_tensor(self) -> Tensor<T, D> {
+		Tensor::CpuTensor(self)
 	}
 
 	fn cpu(&self) -> CpuTensor<T, D> {
@@ -23,5 +27,12 @@ impl<T: GpuType, D: Dimension> TensorTrait for CpuTensor<T, D> {
 	}
 	fn gpu(&self) -> GpuTensor<T, D> {
 		GpuTensor::from_ndarray(self.inner.view())
+	}
+
+	fn is_cpu(&self) -> bool {
+		true
+	}
+	fn is_gpu(&self) -> bool {
+		false
 	}
 }
